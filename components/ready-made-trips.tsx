@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { READY_MADE_TRIPS, type Locale, isRTL, t } from '@/lib/i18n'
+import { getDifficultyLabel } from '@/lib/trip-options'
 import { MapPin, Clock, TrendingUp } from 'lucide-react'
 
 export function ReadyMadeTrips({ locale = 'en' }: { locale?: Locale }) {
@@ -75,14 +76,14 @@ export function ReadyMadeTrips({ locale = 'en' }: { locale?: Locale }) {
                         trip.difficulty
                       )}`}
                     >
-                      {trip.difficulty.charAt(0).toUpperCase() + trip.difficulty.slice(1)}
+                      {getDifficultyLabel(trip.difficulty, locale)}
                     </span>
                   </div>
                 </div>
 
                 {/* CTA Button */}
                 <Button className="w-full" asChild>
-                  <Link href={`/auth/sign-up?trip=${trip.id}`}>
+                  <Link href={`/${locale}/auth/sign-up?trip=${trip.id}`}>
                     {t('landing.exploreTrips', locale)}
                   </Link>
                 </Button>

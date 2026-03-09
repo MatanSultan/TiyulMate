@@ -1,32 +1,35 @@
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import Link from 'next/link'
+import { Sparkles } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { resolveLocale, type Locale } from '@/lib/i18n'
+import { siteCopy } from '@/lib/site-copy'
 
-export default function Page() {
+interface SignUpSuccessProps {
+  params: Promise<{ locale: string }>
+}
+
+export default async function SignUpSuccessPage({ params }: SignUpSuccessProps) {
+  const resolvedParams = await params
+  const locale = resolveLocale(resolvedParams.locale) as Locale
+  const copy = siteCopy[locale].auth
+
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
-      <div className="w-full max-w-sm">
-        <div className="flex flex-col gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-2xl">
-                Thank you for signing up!
-              </CardTitle>
-              <CardDescription>Check your email to confirm</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                You&apos;ve successfully signed up. Please check your email to
-                confirm your account before signing in.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </div>
+    <main className="app-shell flex min-h-screen items-center justify-center px-4 py-10 sm:px-6 lg:px-8">
+      <Card className="w-full max-w-2xl rounded-[2rem] border-white/10 bg-card/82 shadow-[0_40px_120px_-60px_rgba(15,23,42,0.55)]">
+        <CardHeader className="space-y-4 text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-primary/10 text-primary">
+            <Sparkles className="h-7 w-7" />
+          </div>
+          <CardTitle className="text-3xl">{copy.signUpSuccessTitle}</CardTitle>
+          <CardDescription className="text-base leading-7">{copy.signUpSuccessBody}</CardDescription>
+        </CardHeader>
+        <CardContent className="flex justify-center">
+          <Button asChild className="rounded-full px-6">
+            <Link href={`/${locale}/auth/login`}>{copy.login}</Link>
+          </Button>
+        </CardContent>
+      </Card>
+    </main>
   )
 }

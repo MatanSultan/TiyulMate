@@ -1,121 +1,164 @@
 'use client'
 
-import { useAuth } from '@/hooks/use-auth'
+import Link from 'next/link'
+import { ArrowLeft, Check, Copy, ExternalLink, Loader2, Share2 } from 'lucide-react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { useRouter, useParams } from 'next/navigation'
-import { useEffect, useState, Suspense } from 'react'
+import { useAuth } from '@/hooks/use-auth'
+import { resolveLocale, t, type Locale } from '@/lib/i18n'
+import { siteCopy } from '@/lib/site-copy'
 import { createClient } from '@/lib/supabase/client'
-import Link from 'next/link'
-import { ArrowLeft, Copy, Check, Loader } from 'lucide-react'
-import type { Trip } from '@/hooks/use-trips'
+import type { TripRecord } from '@/lib/trip-model'
 
-export default function ShareTrip() {
+function createShareToken() {
+  return `share_${Math.random().toString(36).slice(2)}_${Date.now()}`
+}
+
+function buildUiText(locale: Locale) {
+  return {
+    loading: t('common.loading', locale),
+    back: t('common.back', locale),
+    notFound: locale === 'he' ? 'הטיול לא נמצא' : locale === 'ar' ? 'الرحلة غير موجودة' : 'Trip not found',
+    loadError:
+      locale === 'he'
+        ? 'טעינת השיתוף נכשלה'
+        : locale === 'ar'
+          ? 'فشل تحميل إعدادات المشاركة'
+          : 'Failed to load share settings',
+    shareError:
+      locale === 'he'
+        ? 'יצירת קישור השיתוף נכשלה'
+        : locale === 'ar'
+          ? 'فشل إنشاء رابط المشاركة'
+          : 'Failed to generate share link',
+  }
+}
+
+export default function ShareTripPage() {
   const { user, loading: userLoading } = useAuth()
   const router = useRouter()
   const params = useParams()
-  const locale = params.locale as string
-  const id = params?.id as string | undefined
-  const [trip, setTrip] = useState<Trip | null>(null)
+  const locale = resolveLocale(params.locale as string) as Locale
+  const tripId = params.id as string
+  const copy = siteCopy[locale].share
+  const uiText = useMemo(() => buildUiText(locale), [locale])
+
+  const [trip, setTrip] = useState<TripRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [shareToken, setShareToken] = useState<string | null>(null)
-  const [shareLink, setShareLink] = useState<string>('')
+  const [shareLink, setShareLink] = useState('')
   const [copied, setCopied] = useState(false)
   const [creating, setCreating] = useState(false)
+
+  const baseUrl = useMemo(
+    () => process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : ''),
+    [],
+  )
 
   useEffect(() => {
     if (!userLoading && !user) {
       router.push(`/${locale}/auth/login`)
     }
-  }, [user, userLoading, router, locale])
+  }, [locale, router, user, userLoading])
 
   useEffect(() => {
-    console.debug('ShareTrip id param', id)
-
     const fetchTripAndShareLink = async () => {
+      if (!user) return
+
       try {
         const supabase = createClient()
-
-        // Fetch trip
         const { data: tripData, error: tripError } = await supabase
           .from('trips')
           .select('*')
-          .eq('id', id)
+          .eq('id', tripId)
+          .eq('user_id', user.id)
           .single()
 
         if (tripError) throw tripError
-        setTrip(tripData as Trip)
+        setTrip(tripData as TripRecord)
 
-        // Check for existing share link
-        const { data: shareData } = await supabase
+        const { data: shareData, error: shareFetchError } = await supabase
           .from('share_links')
           .select('token')
-          .eq('trip_id', id)
-          .single()
+          .eq('trip_id', tripId)
+          .maybeSingle()
 
-        if (shareData) {
-          setShareToken(shareData.token)
-          setShareLink(`${window.location.origin}/shared/${shareData.token}`)
+        if (shareFetchError) throw shareFetchError
+
+        if (shareData?.token) {
+          setShareLink(`${baseUrl}/shared/${shareData.token}`)
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        console.error('Error fetching trip or share link:', message)
-        setError(message)
+        setError(err instanceof Error ? err.message : uiText.loadError)
       } finally {
         setLoading(false)
       }
     }
 
-    if (user && id) {
+    if (user && tripId && baseUrl) {
       fetchTripAndShareLink()
     }
-  }, [user, id])
+  }, [baseUrl, tripId, uiText.loadError, user])
 
   const generateShareLink = async () => {
     if (!trip) return
 
     try {
       setCreating(true)
-      const token = `share_${Math.random().toString(36).slice(2)}_${Date.now()}`
+      setError(null)
       const supabase = createClient()
 
-      // Create share link
-      const { error } = await supabase.from('share_links').insert({
-        trip_id: trip.id,
-        token,
-      })
+      const { data: existingShare, error: existingShareError } = await supabase
+        .from('share_links')
+        .select('token')
+        .eq('trip_id', trip.id)
+        .maybeSingle()
 
-      if (error) throw error
+      if (existingShareError) throw existingShareError
 
-      setShareToken(token)
-      const newLink = `${window.location.origin}/shared/${token}`
-      setShareLink(newLink)
+      if (existingShare?.token) {
+        setShareLink(`${baseUrl}/shared/${existingShare.token}`)
+        return
+      }
+
+      const token = createShareToken()
+      const { error: shareError } = await supabase
+        .from('share_links')
+        .insert({
+          trip_id: trip.id,
+          token,
+        })
+
+      if (shareError) throw shareError
+
+      setShareLink(`${baseUrl}/shared/${token}`)
     } catch (err) {
-      console.error('Error creating share link:', err)
+      setError(err instanceof Error ? err.message : uiText.shareError)
     } finally {
       setCreating(false)
     }
   }
 
   const copyToClipboard = async () => {
-    if (shareLink) {
-      await navigator.clipboard.writeText(shareLink)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }
+    if (!shareLink) return
+
+    await navigator.clipboard.writeText(shareLink)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1800)
   }
 
   if (userLoading || loading) {
     return (
       <>
         <Suspense fallback={<div className="h-16 border-b border-border bg-background" />}>
-          <Header />
+          <Header locale={locale} />
         </Suspense>
-        <main className="mx-auto max-w-2xl px-4 py-12">
-          <p className="text-center text-muted-foreground">Loading...</p>
+        <main className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8">
+          <p className="text-center text-muted-foreground">{uiText.loading}</p>
         </main>
       </>
     )
@@ -125,16 +168,11 @@ export default function ShareTrip() {
     return (
       <>
         <Suspense fallback={<div className="h-16 border-b border-border bg-background" />}>
-          <Header />
+          <Header locale={locale} />
         </Suspense>
-        <main className="mx-auto max-w-2xl px-4 py-12">
-          <Card className="p-8 text-center">
-            <p className="text-muted-foreground">
-              {error ? `Error: ${error}` : 'Trip not found'}
-            </p>
-            <Button asChild variant="outline" className="mt-6">
-              <Link href={`/${locale}/dashboard`}>Back to Dashboard</Link>
-            </Button>
+        <main className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8">
+          <Card className="rounded-[2rem] border-destructive/40 bg-destructive/8 p-8 text-center text-destructive">
+            {error || uiText.notFound}
           </Card>
         </main>
       </>
@@ -144,82 +182,80 @@ export default function ShareTrip() {
   return (
     <>
       <Suspense fallback={<div className="h-16 border-b border-border bg-background" />}>
-        <Header />
+        <Header locale={locale} />
       </Suspense>
-      <main className="mx-auto max-w-2xl px-4 py-12">
-        <Button variant="ghost" asChild className="mb-6">
-          <Link href={`/${locale}/dashboard/trip/${trip.id}`} className="gap-2">
+
+      <main className="app-shell mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+        <Button variant="ghost" asChild className="rounded-full">
+          <Link href={`/${locale}/dashboard/trip/${trip.id}`}>
             <ArrowLeft className="h-4 w-4" />
-            Back to Trip
+            {uiText.back}
           </Link>
         </Button>
 
-        <Card className="p-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">{trip.title}</h1>
-          <p className="text-muted-foreground mb-8">Share this trip with friends and family</p>
+        <div className="mt-6 grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+          <Card className="rounded-[2rem] border-white/10 bg-card/82 p-6 shadow-[0_40px_120px_-60px_rgba(15,23,42,0.55)] sm:p-8">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-primary/8 px-4 py-2 text-xs font-semibold uppercase tracking-[0.28em] text-primary/80">
+              <Share2 className="h-3.5 w-3.5" />
+              {copy.title}
+            </div>
+            <h1 className="mt-5 text-3xl font-semibold tracking-tight text-foreground">{trip.title}</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">{copy.body}</p>
 
-          {shareToken ? (
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">
-                  Share Link
-                </label>
-                <div className="flex gap-2">
-                  <Input
-                    type="text"
-                    value={shareLink}
-                    readOnly
-                    className="text-sm"
-                  />
-                  <Button
-                    onClick={copyToClipboard}
-                    variant="outline"
-                    className="gap-2 flex-shrink-0"
-                  >
-                    {copied ? (
-                      <>
-                        <Check className="h-4 w-4" />
-                        Copied!
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-4 w-4" />
-                        Copy
-                      </>
-                    )}
+            <div className="mt-8 space-y-4">
+              <label className="block text-sm font-medium text-foreground">{copy.linkLabel}</label>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Input readOnly value={shareLink} placeholder={`${baseUrl}/shared/...`} className="h-12 rounded-2xl" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-full px-5"
+                  onClick={copyToClipboard}
+                  disabled={!shareLink}
+                >
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {copied ? copy.copied : copy.copy}
+                </Button>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button type="button" className="rounded-full px-6" onClick={generateShareLink} disabled={creating}>
+                  {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />}
+                  {creating ? copy.generating : copy.generate}
+                </Button>
+
+                {shareLink && (
+                  <Button asChild variant="outline" className="rounded-full px-6">
+                    <Link href={shareLink}>
+                      {copy.preview}
+                      <ExternalLink className="h-4 w-4" />
+                    </Link>
                   </Button>
-                </div>
+                )}
               </div>
 
-              <div className="rounded-lg bg-card/50 border border-border p-4">
-                <h3 className="font-semibold text-foreground mb-2">How to share:</h3>
-                <ol className="space-y-1 text-sm text-muted-foreground list-decimal list-inside">
-                  <li>Copy the link above</li>
-                  <li>Send it to anyone you want to share your trip with</li>
-                  <li>They can view your itinerary without needing to log in</li>
-                </ol>
-              </div>
+              {error && (
+                <Card className="rounded-[1.25rem] border-destructive/40 bg-destructive/8 p-4 text-sm text-destructive">
+                  {error}
+                </Card>
+              )}
+            </div>
+          </Card>
 
-              <Button asChild variant="outline" className="w-full">
-                <Link href={shareLink}>Preview Share Link</Link>
-              </Button>
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground mb-6">
-                Generate a shareable link to let others view your trip
-              </p>
-              <Button
-                onClick={generateShareLink}
-                disabled={creating}
-                className="gap-2"
-              >
-                {creating && <Loader className="h-4 w-4 animate-spin" />}
-                {creating ? 'Generating...' : 'Generate Share Link'}
-              </Button>
-            </div>
-          )}
-        </Card>
+          <Card className="rounded-[2rem] border-white/10 bg-card/82 p-6 shadow-[0_40px_120px_-60px_rgba(15,23,42,0.55)]">
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary/70">{copy.instructionsTitle}</p>
+            <ol className="mt-5 space-y-3 text-sm leading-7 text-muted-foreground">
+              {copy.instructions.map((instruction, index) => (
+                <li key={instruction} className="flex gap-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                    {index + 1}
+                  </span>
+                  <span>{instruction}</span>
+                </li>
+              ))}
+            </ol>
+          </Card>
+        </div>
       </main>
     </>
   )

@@ -1,23 +1,54 @@
 import useSWR from 'swr'
 import { createClient } from '@/lib/supabase/client'
+import type { TripRecord } from '@/lib/trip-model'
 
-export interface Trip {
-  id: string
-  user_id: string
-  title: string
-  region: string
-  duration_type: string
-  difficulty: string
-  preferences: Record<string, unknown>
-  itinerary: Record<string, unknown>
-  created_at: string
+export type Trip = TripRecord
+
+let supportsLanguageCodeColumn: boolean | null = null
+
+function hasMissingColumnError(error: unknown, column: string) {
+  if (!error || typeof error !== 'object') return false
+  const message = [
+    'message' in error ? String(error.message) : '',
+    'details' in error ? String(error.details) : '',
+    'hint' in error ? String(error.hint) : '',
+  ].join(' ')
+
+  return message.toLowerCase().includes(column.toLowerCase())
+}
+
+function stripUnsupportedTripFields<T extends Record<string, unknown>>(trip: T) {
+  const { language_code, updated_at, ...safeTrip } = trip
+  return safeTrip
+}
+
+function sortTrips(trips: Trip[]) {
+  return [...trips].sort((left, right) => {
+    const rightDate = new Date(right.updated_at || right.created_at).getTime()
+    const leftDate = new Date(left.updated_at || left.created_at).getTime()
+    return rightDate - leftDate
+  })
 }
 
 async function fetchTrips(key: string) {
   const supabase = createClient()
-  const { data, error } = await supabase.from('trips').select('*')
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
+
+  if (authError) throw authError
+  if (!user) return []
+
+  const query = supabase
+    .from('trips')
+    .select('*')
+    .eq('user_id', user.id)
+  const { data, error } = await query
+    .order('created_at', { ascending: false })
+
   if (error) throw error
-  return data
+  return sortTrips(data || [])
 }
 
 import { useAuth } from '@/hooks/use-auth'
@@ -57,24 +88,69 @@ export async function createTrip(
   if (!user) throw new Error('Not authenticated')
 
   // use `.select().single()` to get the inserted row rather than an array
-  const { data, error } = await supabase
+  const tripPayload = supportsLanguageCodeColumn === false
+    ? stripUnsupportedTripFields({
+        ...trip,
+        user_id: user.id,
+      })
+    : {
+        ...trip,
+        user_id: user.id,
+      }
+
+  let { data, error } = await supabase
     .from('trips')
-    .insert({
-      ...trip,
-      user_id: user.id,
-    })
+    .insert(tripPayload)
     .select()
     .single()
 
+  if (error && (hasMissingColumnError(error, 'language_code') || hasMissingColumnError(error, 'updated_at'))) {
+    supportsLanguageCodeColumn = false
+    const retry = await supabase
+      .from('trips')
+      .insert({
+        ...stripUnsupportedTripFields({
+          ...trip,
+          user_id: user.id,
+        }),
+      })
+      .select()
+      .single()
+
+    data = retry.data
+    error = retry.error
+  }
+
   if (error) throw error
+  if (supportsLanguageCodeColumn !== false) {
+    supportsLanguageCodeColumn = true
+  }
   if (!data) throw new Error('Failed to return created trip')
   return data
 }
 
 export async function updateTrip(id: string, updates: Partial<Trip>) {
   const supabase = createClient()
-  const { data, error } = await supabase.from('trips').update(updates).eq('id', id)
+  const nextUpdates = supportsLanguageCodeColumn === false ? stripUnsupportedTripFields(updates) : updates
+  let { data, error } = await supabase.from('trips').update(nextUpdates).eq('id', id).select().single()
+
+  if (error && (hasMissingColumnError(error, 'language_code') || hasMissingColumnError(error, 'updated_at'))) {
+    supportsLanguageCodeColumn = false
+    const retry = await supabase
+      .from('trips')
+      .update(stripUnsupportedTripFields(updates))
+      .eq('id', id)
+      .select()
+      .single()
+
+    data = retry.data
+    error = retry.error
+  }
+
   if (error) throw error
+  if (supportsLanguageCodeColumn !== false) {
+    supportsLanguageCodeColumn = true
+  }
   return data
 }
 

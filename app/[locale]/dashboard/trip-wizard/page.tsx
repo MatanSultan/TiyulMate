@@ -1,6 +1,7 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Brain, Clock3, Compass, MapPin, Sparkles, TrendingUp } from 'lucide-react'
+import { Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
@@ -8,16 +9,25 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/hooks/use-auth'
 import { createTrip, useTrips } from '@/hooks/use-trips'
-import { t, type Locale } from '@/lib/i18n'
+import { resolveLocale, t, type Locale } from '@/lib/i18n'
+import { tripCopy } from '@/lib/trip-copy'
+import {
+  DIFFICULTIES,
+  DURATIONS,
+  getDifficultyLabel,
+  getDurationLabel,
+  getPreferenceOptions,
+  getRegionLabel,
+  getSuggestedTripTitle,
+  REGIONS,
+} from '@/lib/trip-options'
 
 type Step = 'region' | 'duration' | 'difficulty' | 'preferences' | 'review'
 
-const REGIONS = ['Golan Heights', 'Galilee', 'Carmel', 'Judean Hills', 'Dead Sea', 'Negev', 'Eilat']
-const DURATIONS = ['1 day', '2-3 days', '4-7 days', 'multi-week']
-const DIFFICULTIES = ['Easy', 'Moderate', 'Hard', 'Expert']
-const OTHER_OPTION = 'Other'
+const OTHER_OPTION = '__other__'
+const STEPS: Step[] = ['region', 'duration', 'difficulty', 'preferences', 'review']
 
-interface TripData {
+interface TripWizardData {
   title: string
   region: string
   duration_type: string
@@ -25,6 +35,8 @@ interface TripData {
   customRegion: string
   customDuration: string
   customDifficulty: string
+  coverImageUrl: string
+  mapQuery: string
   preferences: {
     waterFeatures: boolean
     camping: boolean
@@ -32,27 +44,63 @@ interface TripData {
     archaeological: boolean
     wildflowers: boolean
     photography: boolean
+    accessibleRoutes: boolean
+    wheelchairFriendly: boolean
+    lowMobilityFriendly: boolean
+    otherPreferences: string
   }
-  otherPreferences: string
 }
 
-const PREFERENCE_OPTIONS: Array<{ key: keyof TripData['preferences']; label: string }> = [
-  { key: 'waterFeatures', label: 'Water features (waterfalls, springs)' },
-  { key: 'camping', label: 'Camping opportunities' },
-  { key: 'viewpoints', label: 'Scenic viewpoints' },
-  { key: 'archaeological', label: 'Archaeological sites' },
-  { key: 'wildflowers', label: 'Wildflowers and nature' },
-  { key: 'photography', label: 'Photography spots' },
-]
+function buildUiText(locale: Locale) {
+  return {
+    loading: t('common.loading', locale),
+    previous: t('wizard.prev', locale),
+    next: t('wizard.next', locale),
+    preview: locale === 'he' ? 'תצוגה מקדימה' : locale === 'ar' ? 'معاينة' : 'Preview',
+    untitledTrip: locale === 'he' ? 'טיול ללא שם' : locale === 'ar' ? 'رحلة بدون اسم' : 'Untitled trip',
+    selectRegion: locale === 'he' ? 'בחר אזור' : locale === 'ar' ? 'اختر منطقة' : 'Select a region',
+    selectDuration: locale === 'he' ? 'בחר משך' : locale === 'ar' ? 'اختر مدة' : 'Select a duration',
+    selectDifficulty: locale === 'he' ? 'בחר רמת קושי' : locale === 'ar' ? 'اختر مستوى الصعوبة' : 'Select a difficulty',
+    completeStep:
+      locale === 'he'
+        ? 'אנא השלם את השלב הזה לפני שממשיכים.'
+        : locale === 'ar'
+          ? 'يرجى إكمال هذه الخطوة قبل المتابعة.'
+          : 'Please complete this step before continuing.',
+    finishSetup:
+      locale === 'he'
+        ? 'אנא השלם את פרטי הטיול לפני היצירה.'
+        : locale === 'ar'
+          ? 'يرجى إكمال إعدادات الرحلة قبل الإنشاء.'
+          : 'Please finish the trip setup before generating.',
+    failedGenerate: locale === 'he' ? 'יצירת הטיול נכשלה' : locale === 'ar' ? 'فشل إنشاء الرحلة' : 'Failed to generate trip',
+    mapQueryPlaceholder:
+      locale === 'he'
+        ? 'לדוגמה: Banias Waterfall Israel'
+        : locale === 'ar'
+          ? 'مثال: Banias Waterfall Israel'
+          : 'Example: Banias Waterfall Israel',
+    imagePlaceholder:
+      locale === 'he'
+        ? 'הדבק קישור לתמונת כיסוי של הטיול'
+        : locale === 'ar'
+          ? 'ألصق رابط صورة غلاف للرحلة'
+          : 'Paste an image URL for the trip cover',
+  }
+}
 
-export default function TripWizard() {
+export default function TripWizardPage() {
   const { user, loading: userLoading } = useAuth()
   const router = useRouter()
   const params = useParams()
-  const locale = params.locale as Locale
+  const locale = resolveLocale(params.locale as string) as Locale
+  const copy = tripCopy[locale].wizard
   const { mutate } = useTrips()
   const [step, setStep] = useState<Step>('region')
-  const [tripData, setTripData] = useState<TripData>({
+  const [error, setError] = useState<string | null>(null)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [generationStep, setGenerationStep] = useState(0)
+  const [tripData, setTripData] = useState<TripWizardData>({
     title: '',
     region: '',
     duration_type: '',
@@ -60,6 +108,8 @@ export default function TripWizard() {
     customRegion: '',
     customDuration: '',
     customDifficulty: '',
+    coverImageUrl: '',
+    mapQuery: '',
     preferences: {
       waterFeatures: false,
       camping: false,
@@ -67,19 +117,51 @@ export default function TripWizard() {
       archaeological: false,
       wildflowers: false,
       photography: false,
+      accessibleRoutes: false,
+      wheelchairFriendly: false,
+      lowMobilityFriendly: false,
+      otherPreferences: '',
     },
-    otherPreferences: '',
   })
-  const [isCreating, setIsCreating] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
-  const steps: Step[] = ['region', 'duration', 'difficulty', 'preferences', 'review']
-  const progress = steps.indexOf(step) + 1
-  const totalSteps = steps.length
-
+  const uiText = useMemo(() => buildUiText(locale), [locale])
   const resolvedRegion = tripData.region === OTHER_OPTION ? tripData.customRegion.trim() : tripData.region
   const resolvedDuration = tripData.duration_type === OTHER_OPTION ? tripData.customDuration.trim() : tripData.duration_type
   const resolvedDifficulty = tripData.difficulty === OTHER_OPTION ? tripData.customDifficulty.trim() : tripData.difficulty
+  const suggestedTitle = useMemo(() => getSuggestedTripTitle(resolvedRegion, locale), [resolvedRegion, locale])
+  const regionOptions = useMemo(
+    () => REGIONS.map((region) => ({ value: region, label: getRegionLabel(region, locale) })),
+    [locale],
+  )
+  const durationOptions = useMemo(
+    () => DURATIONS.map((duration) => ({ value: duration, label: getDurationLabel(duration, locale) })),
+    [locale],
+  )
+  const difficultyOptions = useMemo(
+    () => DIFFICULTIES.map((difficulty) => ({ value: difficulty, label: getDifficultyLabel(difficulty, locale) })),
+    [locale],
+  )
+  const previewRegion = resolvedRegion ? getRegionLabel(resolvedRegion, locale) : ''
+  const previewDuration = resolvedDuration ? getDurationLabel(resolvedDuration, locale) : ''
+  const previewDifficulty = resolvedDifficulty ? getDifficultyLabel(resolvedDifficulty, locale) : ''
+  const progress = STEPS.indexOf(step) + 1
+
+  const generationMessages = useMemo(
+    () => [
+      copy.generatingBody,
+      locale === 'he'
+        ? 'מתאימים מסלול לפי האזור, רמת הקושי ותחומי העניין שלך.'
+        : locale === 'ar'
+          ? 'نطابق المسارات مع المنطقة ومستوى الصعوبة واهتماماتك.'
+          : 'Matching trails to your region, difficulty, and interests.',
+      locale === 'he'
+        ? 'מארגנים המלצות יומיות, קצב טיול ונקודות מפה.'
+        : locale === 'ar'
+          ? 'نجهز توصيات يومية وإيقاع الرحلة ونقاط الخريطة.'
+          : 'Preparing daily recommendations, pacing, and route hints.',
+    ],
+    [copy.generatingBody, locale],
+  )
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -87,85 +169,124 @@ export default function TripWizard() {
     }
   }, [locale, router, user, userLoading])
 
+  useEffect(() => {
+    if (!isGenerating) return
+
+    const timer = window.setInterval(() => {
+      setGenerationStep((current) => (current + 1) % generationMessages.length)
+    }, 1800)
+
+    return () => window.clearInterval(timer)
+  }, [generationMessages.length, isGenerating])
+
+  const canContinue = () => {
+    if (step === 'region') return Boolean(resolvedRegion)
+    if (step === 'duration') return Boolean(resolvedDuration)
+    if (step === 'difficulty') return Boolean(resolvedDifficulty)
+    return true
+  }
+
   const handleNext = () => {
-    if (step === 'region' && !resolvedRegion) {
-      setError('Please choose a region or write your own.')
-      return
-    }
-
-    if (step === 'duration' && !resolvedDuration) {
-      setError('Please choose a duration or write your own.')
-      return
-    }
-
-    if (step === 'difficulty' && !resolvedDifficulty) {
-      setError('Please choose a difficulty or write your own.')
+    if (!canContinue()) {
+      setError(uiText.completeStep)
       return
     }
 
     setError(null)
-    const currentIndex = steps.indexOf(step)
-    if (currentIndex < steps.length - 1) {
-      setStep(steps[currentIndex + 1])
-    }
+    setStep(STEPS[Math.min(STEPS.indexOf(step) + 1, STEPS.length - 1)])
   }
 
   const handlePrev = () => {
-    const currentIndex = steps.indexOf(step)
-    if (currentIndex > 0) {
-      setError(null)
-      setStep(steps[currentIndex - 1])
-    }
+    setError(null)
+    setStep(STEPS[Math.max(STEPS.indexOf(step) - 1, 0)])
   }
 
-  const handleCreate = async () => {
+  const handleGenerateTrip = async () => {
     try {
-      setIsCreating(true)
+      setIsGenerating(true)
       setError(null)
 
-      if (!tripData.title.trim() || !resolvedRegion || !resolvedDuration || !resolvedDifficulty) {
-        setError('Please fill in all required fields')
-        return
+      if (!resolvedRegion || !resolvedDuration || !resolvedDifficulty) {
+        throw new Error(uiText.finishSetup)
       }
 
-      await createTrip({
-        title: tripData.title.trim(),
+      const createdTrip = await createTrip({
+        title: tripData.title.trim() || suggestedTitle,
         region: resolvedRegion,
         duration_type: resolvedDuration,
         difficulty: resolvedDifficulty,
-        preferences: {
-          ...tripData.preferences,
-          otherPreferences: tripData.otherPreferences.trim(),
+        preferences: tripData.preferences,
+        itinerary: {
+          cover_image_url: tripData.coverImageUrl.trim(),
+          map_query: tripData.mapQuery.trim(),
+          language: locale,
         },
-        itinerary: {},
       })
 
-      mutate()
-      router.push(`/${locale}/dashboard`)
+      const response = await fetch('/api/generate-itinerary', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tripId: createdTrip.id,
+          title: tripData.title.trim() || suggestedTitle,
+          region: resolvedRegion,
+          duration: resolvedDuration,
+          difficulty: resolvedDifficulty,
+          preferences: tripData.preferences,
+          mapQuery: tripData.mapQuery.trim(),
+          coverImageUrl: tripData.coverImageUrl.trim(),
+          locale,
+        }),
+      })
+
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(
+          payload.error ||
+            (locale === 'he'
+              ? 'יצירת המסלול נכשלה'
+              : locale === 'ar'
+                ? 'فشل إنشاء المسار'
+                : 'Failed to generate itinerary'),
+        )
+      }
+
+      await mutate()
+      router.push(`/${locale}/dashboard/trip/${createdTrip.id}?fresh=1`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create trip')
-    } finally {
-      setIsCreating(false)
+      setError(err instanceof Error ? err.message : uiText.failedGenerate)
+      setIsGenerating(false)
     }
   }
 
-  const renderChoiceButton = (
-    value: string,
-    currentValue: string,
-    onClick: () => void,
-    label = value,
-  ) => (
+  const renderChoiceCard = ({
+    icon,
+    label,
+    active,
+    onClick,
+  }: {
+    icon: ReactNode
+    label: string
+    active: boolean
+    onClick: () => void
+  }) => (
     <button
-      key={value}
-      onClick={onClick}
-      className={`rounded-lg border-2 p-4 text-left transition-all ${
-        currentValue === value
-          ? 'border-primary bg-primary/5'
-          : 'border-border hover:border-primary/50'
-      }`}
       type="button"
+      onClick={onClick}
+      className={`group rounded-[1.5rem] border p-5 text-left transition-all ${
+        active
+          ? 'border-primary bg-primary/8 shadow-[0_24px_80px_-48px_var(--color-primary)]'
+          : 'border-border/80 bg-card/70 hover:border-primary/40 hover:-translate-y-0.5'
+      }`}
     >
-      <span className="font-medium text-foreground">{label}</span>
+      <div className="flex items-center gap-4">
+        <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${active ? 'bg-primary text-primary-foreground' : 'bg-muted text-primary'}`}>
+          {icon}
+        </div>
+        <span className="font-medium text-foreground">{label}</span>
+      </div>
     </button>
   )
 
@@ -173,10 +294,10 @@ export default function TripWizard() {
     return (
       <>
         <Suspense fallback={<div className="h-16 border-b border-border bg-background" />}>
-          <Header />
+          <Header locale={locale} />
         </Suspense>
-        <main className="mx-auto max-w-2xl px-4 py-12">
-          <p className="text-center text-muted-foreground">Loading...</p>
+        <main className="mx-auto max-w-5xl px-4 py-16 sm:px-6 lg:px-8">
+          <p className="text-center text-muted-foreground">{uiText.loading}</p>
         </main>
       </>
     )
@@ -185,219 +306,321 @@ export default function TripWizard() {
   return (
     <>
       <Suspense fallback={<div className="h-16 border-b border-border bg-background" />}>
-        <Header />
+        <Header locale={locale} />
       </Suspense>
 
-      <main className="mx-auto max-w-2xl px-4 py-12">
-        <div className="mb-8">
-          <h1 className="mb-2 text-3xl font-bold text-foreground">{t('wizard.title', locale)}</h1>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>{`Step ${progress} of ${totalSteps}`}</span>
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-border">
-              <div
-                className="h-full bg-primary transition-all"
-                style={{ width: `${(progress / totalSteps) * 100}%` }}
-              />
-            </div>
-          </div>
-        </div>
+      <main className="app-shell mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+        <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="space-y-6">
+            <div className="animate-float-up rounded-[2rem] border border-white/10 bg-[linear-gradient(135deg,rgba(28,102,159,0.16),rgba(75,197,185,0.08),rgba(255,255,255,0.6))] p-8 shadow-[0_40px_120px_-60px_rgba(15,23,42,0.55)] glass-panel">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/60 px-4 py-2 text-xs font-semibold uppercase tracking-[0.28em] text-primary/80">
+                <Sparkles className="h-3.5 w-3.5" />
+                {copy.aiBadge}
+              </div>
 
-        <Card className="p-8">
-          {error && (
-            <div className="mb-6 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-              {error}
-            </div>
-          )}
-
-          {step === 'region' && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="mb-4 text-2xl font-semibold text-foreground">Where do you want to hike?</h2>
-                <div className="grid gap-3">
-                  {REGIONS.map((region) =>
-                    renderChoiceButton(region, tripData.region, () => setTripData({ ...tripData, region })),
-                  )}
-                  {renderChoiceButton(
-                    OTHER_OPTION,
-                    tripData.region,
-                    () => setTripData({ ...tripData, region: OTHER_OPTION }),
-                    'Other location',
-                  )}
+              <div className="mt-6 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+                <div className="max-w-2xl">
+                  <h1 className="text-balance text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
+                    {copy.smartQuestions}
+                  </h1>
+                  <p className="mt-3 max-w-xl text-base leading-7 text-muted-foreground">{copy.subtitle}</p>
                 </div>
-                {tripData.region === OTHER_OPTION && (
-                  <div className="mt-4">
+
+                <div className="min-w-[220px] rounded-[1.5rem] border border-white/10 bg-black/5 p-4 backdrop-blur">
+                  <div className="mb-2 flex items-center justify-between text-sm">
+                    <span className="font-medium text-muted-foreground">{`${copy.stepLabel} ${progress}`}</span>
+                    <span className="font-semibold text-foreground">{`${progress}/${STEPS.length}`}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-white/50">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-primary via-accent to-secondary transition-all duration-500"
+                      style={{ width: `${(progress / STEPS.length) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {error && (
+              <Card className="rounded-[1.5rem] border-destructive/40 bg-destructive/8 p-4 text-sm text-destructive">
+                {error}
+              </Card>
+            )}
+
+            <Card className="rounded-[2rem] border-white/10 bg-card/80 p-6 shadow-[0_36px_100px_-60px_rgba(15,23,42,0.6)] sm:p-8">
+              {step === 'region' && (
+                <div className="space-y-4">
+                  <h2 className="text-2xl font-semibold text-foreground">{copy.regionQuestion}</h2>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {regionOptions.map((region) =>
+                      renderChoiceCard({
+                        icon: <MapPin className="h-5 w-5" />,
+                        label: region.label,
+                        active: tripData.region === region.value,
+                        onClick: () => setTripData((current) => ({ ...current, region: region.value })),
+                      }),
+                    )}
+                    {renderChoiceCard({
+                      icon: <Compass className="h-5 w-5" />,
+                      label: copy.otherLocation,
+                      active: tripData.region === OTHER_OPTION,
+                      onClick: () => setTripData((current) => ({ ...current, region: OTHER_OPTION })),
+                    })}
+                  </div>
+                  {tripData.region === OTHER_OPTION && (
                     <Input
                       value={tripData.customRegion}
-                      onChange={(e) => setTripData({ ...tripData, customRegion: e.target.value })}
-                      placeholder="Write your location"
-                      className="text-base"
+                      onChange={(event) => setTripData((current) => ({ ...current, customRegion: event.target.value }))}
+                      placeholder={copy.customLocationPlaceholder}
+                      className="h-12 rounded-2xl"
                     />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {step === 'duration' && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="mb-4 text-2xl font-semibold text-foreground">How long is your trip?</h2>
-                <div className="grid gap-3">
-                  {DURATIONS.map((duration) =>
-                    renderChoiceButton(duration, tripData.duration_type, () => setTripData({ ...tripData, duration_type: duration })),
-                  )}
-                  {renderChoiceButton(
-                    OTHER_OPTION,
-                    tripData.duration_type,
-                    () => setTripData({ ...tripData, duration_type: OTHER_OPTION }),
-                    'Other duration',
                   )}
                 </div>
-                {tripData.duration_type === OTHER_OPTION && (
-                  <div className="mt-4">
+              )}
+
+              {step === 'duration' && (
+                <div className="space-y-4">
+                  <h2 className="text-2xl font-semibold text-foreground">{copy.durationQuestion}</h2>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {durationOptions.map((duration) =>
+                      renderChoiceCard({
+                        icon: <Clock3 className="h-5 w-5" />,
+                        label: duration.label,
+                        active: tripData.duration_type === duration.value,
+                        onClick: () => setTripData((current) => ({ ...current, duration_type: duration.value })),
+                      }),
+                    )}
+                    {renderChoiceCard({
+                      icon: <Clock3 className="h-5 w-5" />,
+                      label: copy.otherDuration,
+                      active: tripData.duration_type === OTHER_OPTION,
+                      onClick: () => setTripData((current) => ({ ...current, duration_type: OTHER_OPTION })),
+                    })}
+                  </div>
+                  {tripData.duration_type === OTHER_OPTION && (
                     <Input
                       value={tripData.customDuration}
-                      onChange={(e) => setTripData({ ...tripData, customDuration: e.target.value })}
-                      placeholder="Write number of days or trip length"
-                      className="text-base"
+                      onChange={(event) => setTripData((current) => ({ ...current, customDuration: event.target.value }))}
+                      placeholder={copy.customDurationPlaceholder}
+                      className="h-12 rounded-2xl"
                     />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {step === 'difficulty' && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="mb-4 text-2xl font-semibold text-foreground">What&apos;s your fitness level?</h2>
-                <div className="grid gap-3">
-                  {DIFFICULTIES.map((difficulty) =>
-                    renderChoiceButton(difficulty, tripData.difficulty, () => setTripData({ ...tripData, difficulty })),
-                  )}
-                  {renderChoiceButton(
-                    OTHER_OPTION,
-                    tripData.difficulty,
-                    () => setTripData({ ...tripData, difficulty: OTHER_OPTION }),
-                    'Other difficulty',
                   )}
                 </div>
-                {tripData.difficulty === OTHER_OPTION && (
-                  <div className="mt-4">
+              )}
+
+              {step === 'difficulty' && (
+                <div className="space-y-4">
+                  <h2 className="text-2xl font-semibold text-foreground">{copy.difficultyQuestion}</h2>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {difficultyOptions.map((difficulty) =>
+                      renderChoiceCard({
+                        icon: <TrendingUp className="h-5 w-5" />,
+                        label: difficulty.label,
+                        active: tripData.difficulty === difficulty.value,
+                        onClick: () => setTripData((current) => ({ ...current, difficulty: difficulty.value })),
+                      }),
+                    )}
+                    {renderChoiceCard({
+                      icon: <TrendingUp className="h-5 w-5" />,
+                      label: copy.otherDifficulty,
+                      active: tripData.difficulty === OTHER_OPTION,
+                      onClick: () => setTripData((current) => ({ ...current, difficulty: OTHER_OPTION })),
+                    })}
+                  </div>
+                  {tripData.difficulty === OTHER_OPTION && (
                     <Input
                       value={tripData.customDifficulty}
-                      onChange={(e) => setTripData({ ...tripData, customDifficulty: e.target.value })}
-                      placeholder="Write your fitness level or difficulty"
-                      className="text-base"
+                      onChange={(event) => setTripData((current) => ({ ...current, customDifficulty: event.target.value }))}
+                      placeholder={copy.customDifficultyPlaceholder}
+                      className="h-12 rounded-2xl"
                     />
+                  )}
+                </div>
+              )}
+
+              {step === 'preferences' && (
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="text-2xl font-semibold text-foreground">{copy.preferencesQuestion}</h2>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">{copy.preferencesBody}</p>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {getPreferenceOptions(locale).map(({ key, label }) => {
+                      const checked = Boolean(tripData.preferences[key])
+
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() =>
+                            setTripData((current) => ({
+                              ...current,
+                              preferences: {
+                                ...current.preferences,
+                                [key]: !checked,
+                              },
+                            }))
+                          }
+                          className={`rounded-[1.25rem] border p-4 text-left ${
+                            checked ? 'border-primary bg-primary/8' : 'border-border/80 hover:border-primary/35'
+                          }`}
+                        >
+                          <span className="font-medium text-foreground">{label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <Input
+                    value={tripData.preferences.otherPreferences}
+                    onChange={(event) =>
+                      setTripData((current) => ({
+                        ...current,
+                        preferences: {
+                          ...current.preferences,
+                          otherPreferences: event.target.value,
+                        },
+                      }))
+                    }
+                    placeholder={copy.otherPreferencesPlaceholder}
+                    className="h-12 rounded-2xl"
+                  />
+                </div>
+              )}
+
+              {step === 'review' && (
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="text-2xl font-semibold text-foreground">{copy.reviewTitle}</h2>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">{copy.autoRedirect}</p>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-foreground">{copy.tripName}</label>
+                      <Input
+                        value={tripData.title}
+                        onChange={(event) => setTripData((current) => ({ ...current, title: event.target.value }))}
+                        placeholder={suggestedTitle || copy.tripName}
+                        className="h-12 rounded-2xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-foreground">{copy.mapQuery}</label>
+                      <Input
+                        value={tripData.mapQuery}
+                        onChange={(event) => setTripData((current) => ({ ...current, mapQuery: event.target.value }))}
+                        placeholder={uiText.mapQueryPlaceholder}
+                        className="h-12 rounded-2xl"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">{copy.imageUrl}</label>
+                      <Input
+                        value={tripData.coverImageUrl}
+                        onChange={(event) => setTripData((current) => ({ ...current, coverImageUrl: event.target.value }))}
+                        placeholder={uiText.imagePlaceholder}
+                        className="h-12 rounded-2xl"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 rounded-[1.5rem] border border-border/70 bg-muted/30 p-5 sm:grid-cols-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">{copy.regionQuestion}</p>
+                      <p className="mt-2 font-medium text-foreground">{previewRegion}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">{copy.durationQuestion}</p>
+                      <p className="mt-2 font-medium text-foreground">{previewDuration}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">{copy.difficultyQuestion}</p>
+                      <p className="mt-2 font-medium text-foreground">{previewDifficulty}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-full px-6"
+                  onClick={handlePrev}
+                  disabled={step === 'region' || isGenerating}
+                >
+                  {uiText.previous}
+                </Button>
+
+                {step === 'review' ? (
+                  <Button type="button" className="rounded-full px-6" onClick={handleGenerateTrip} disabled={isGenerating}>
+                    <Brain className="h-4 w-4" />
+                    {copy.create}
+                  </Button>
+                ) : (
+                  <Button type="button" className="rounded-full px-6" onClick={handleNext}>
+                    {uiText.next}
+                  </Button>
+                )}
+              </div>
+            </Card>
+          </div>
+
+          <div className="space-y-6">
+            <Card className="rounded-[2rem] border-white/10 bg-card/80 p-6 shadow-[0_36px_100px_-60px_rgba(15,23,42,0.6)]">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/12 text-primary">
+                  <Brain className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">{copy.generatingTitle}</p>
+                  <p className="text-sm text-muted-foreground">{generationMessages[generationStep]}</p>
+                </div>
+              </div>
+
+              <div className="mt-6 h-2 overflow-hidden rounded-full bg-muted">
+                <div
+                  className={`h-full rounded-full bg-gradient-to-r from-primary via-accent to-secondary ${isGenerating ? 'animate-shimmer' : ''}`}
+                  style={{ width: isGenerating ? '100%' : `${(progress / STEPS.length) * 100}%` }}
+                />
+              </div>
+            </Card>
+
+            <Card className="rounded-[2rem] border-white/10 bg-card/80 p-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary/70">{uiText.preview}</p>
+              <div className="mt-4 space-y-4">
+                <div className="rounded-[1.5rem] border border-border/80 bg-muted/25 p-5">
+                  <p className="text-sm text-muted-foreground">{copy.tripName}</p>
+                  <p className="mt-2 text-xl font-semibold text-foreground">{tripData.title.trim() || suggestedTitle || uiText.untitledTrip}</p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-[1.25rem] border border-border/80 bg-muted/25 p-4">
+                    <p className="text-sm text-muted-foreground">{copy.regionQuestion}</p>
+                    <p className="mt-1 font-medium text-foreground">{previewRegion || uiText.selectRegion}</p>
+                  </div>
+                  <div className="rounded-[1.25rem] border border-border/80 bg-muted/25 p-4">
+                    <p className="text-sm text-muted-foreground">{copy.durationQuestion}</p>
+                    <p className="mt-1 font-medium text-foreground">{previewDuration || uiText.selectDuration}</p>
+                  </div>
+                  <div className="rounded-[1.25rem] border border-border/80 bg-muted/25 p-4 sm:col-span-2">
+                    <p className="text-sm text-muted-foreground">{copy.difficultyQuestion}</p>
+                    <p className="mt-1 font-medium text-foreground">{previewDifficulty || uiText.selectDifficulty}</p>
+                  </div>
+                </div>
+
+                {tripData.preferences.otherPreferences && (
+                  <div className="rounded-[1.25rem] border border-border/80 bg-muted/25 p-4">
+                    <p className="text-sm text-muted-foreground">{copy.otherPreferences}</p>
+                    <p className="mt-1 font-medium text-foreground">{tripData.preferences.otherPreferences}</p>
                   </div>
                 )}
               </div>
-            </div>
-          )}
-
-          {step === 'preferences' && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="mb-4 text-2xl font-semibold text-foreground">What interests you?</h2>
-                <div className="space-y-3">
-                  {PREFERENCE_OPTIONS.map(({ key, label }) => (
-                    <label
-                      key={key}
-                      className="flex cursor-pointer items-center gap-3 rounded-lg border border-border p-3 hover:bg-card/50"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={tripData.preferences[key]}
-                        onChange={(e) =>
-                          setTripData({
-                            ...tripData,
-                            preferences: {
-                              ...tripData.preferences,
-                              [key]: e.target.checked,
-                            },
-                          })
-                        }
-                        className="h-4 w-4"
-                      />
-                      <span className="text-foreground">{label}</span>
-                    </label>
-                  ))}
-                </div>
-                <div className="mt-4">
-                  <label className="mb-2 block text-sm font-medium text-foreground">Other interests</label>
-                  <Input
-                    value={tripData.otherPreferences}
-                    onChange={(e) => setTripData({ ...tripData, otherPreferences: e.target.value })}
-                    placeholder="Anything else the trip should include?"
-                    className="text-base"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {step === 'review' && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="mb-6 text-2xl font-semibold text-foreground">Give your trip a name</h2>
-                <div className="space-y-4">
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-foreground">Trip Name</label>
-                    <Input
-                      value={tripData.title}
-                      onChange={(e) => setTripData({ ...tripData, title: e.target.value })}
-                      placeholder="e.g., Family Weekend Hike"
-                      className="text-base"
-                    />
-                  </div>
-
-                  <div className="mt-6 space-y-2 rounded-lg bg-card/50 p-4">
-                    <div className="flex justify-between gap-4">
-                      <span className="text-muted-foreground">{t('wizard.region', locale)}:</span>
-                      <span className="font-medium text-right text-foreground">{resolvedRegion}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-muted-foreground">{t('trip.duration', locale)}:</span>
-                      <span className="font-medium text-right text-foreground">{resolvedDuration}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-muted-foreground">{t('wizard.difficulty', locale)}:</span>
-                      <span className="font-medium text-right text-foreground">{resolvedDifficulty}</span>
-                    </div>
-                    {tripData.otherPreferences.trim() && (
-                      <div className="flex justify-between gap-4">
-                        <span className="text-muted-foreground">Other:</span>
-                        <span className="font-medium text-right text-foreground">{tripData.otherPreferences.trim()}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="mt-8 flex justify-between gap-4">
-            <Button
-              variant="outline"
-              onClick={handlePrev}
-              disabled={step === 'region'}
-            >
-              Previous
-            </Button>
-
-            {step === 'review' ? (
-              <Button
-                onClick={handleCreate}
-                disabled={isCreating || !tripData.title.trim()}
-              >
-                {isCreating ? 'Creating...' : 'Create Trip'}
-              </Button>
-            ) : (
-              <Button onClick={handleNext}>Next</Button>
-            )}
+            </Card>
           </div>
-        </Card>
+        </div>
       </main>
     </>
   )

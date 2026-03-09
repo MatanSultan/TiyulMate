@@ -3,8 +3,8 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
+const geist = Geist({ subsets: ['latin'], variable: '--font-sans', preload: false })
+const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-mono', preload: false })
 
 export const metadata: Metadata = {
   title: 'TiyulMate - AI-Powered Trip Planner',
@@ -29,20 +29,10 @@ export const metadata: Metadata = {
   },
 }
 
-import { isRTL, type Locale } from '@/lib/i18n'
-
-interface RootLayoutProps {
-  children: React.ReactNode
-  params: { locale: Locale }
-}
-
-export default function RootLayout({ children, params }: Readonly<RootLayoutProps>) {
-  const locale = params.locale || 'en'
-  const isRtl = isRTL(locale)
-
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang={locale} dir={isRtl ? 'rtl' : 'ltr'}>
-      <body className="font-sans antialiased">
+    <html lang="en" dir="ltr" suppressHydrationWarning>
+      <body className={`${geist.variable} ${geistMono.variable} font-sans antialiased`}>
         {children}
         <Analytics />
       </body>

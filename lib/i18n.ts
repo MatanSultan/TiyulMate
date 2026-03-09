@@ -5,6 +5,16 @@ export const locales: Locale[] = ['en', 'he', 'ar']
 
 export const isRTL = (locale: Locale): boolean => locale === 'he' || locale === 'ar'
 
+export function resolveLocale(locale?: string | null): Locale {
+  return locales.includes(locale as Locale) ? (locale as Locale) : defaultLocale
+}
+
+export function getLocaleLabel(locale: Locale): string {
+  if (locale === 'he') return 'עברית'
+  if (locale === 'ar') return 'العربية'
+  return 'English'
+}
+
 export const translations = {
   en: {
     // Navigation

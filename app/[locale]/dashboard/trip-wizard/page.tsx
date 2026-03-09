@@ -1,9 +1,10 @@
 'use client'
 
-import { Brain, Clock3, Compass, MapPin, Sparkles, TrendingUp } from 'lucide-react'
+import { Brain, Clock3, Compass, MapPin, TrendingUp } from 'lucide-react'
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Header } from '@/components/header'
+import { LogoMark } from '@/components/logo-mark'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -373,8 +374,8 @@ export default function TripWizardPage() {
       onClick={onClick}
       className={`group rounded-[1.5rem] border p-5 text-left transition-all ${
         active
-          ? 'border-primary bg-primary/8 shadow-[0_24px_80px_-48px_var(--color-primary)]'
-          : 'border-border/80 bg-card/70 hover:border-primary/40 hover:-translate-y-0.5'
+          ? 'travel-panel border-primary/35 shadow-[0_28px_82px_-52px_rgba(156,98,67,0.38)]'
+          : 'travel-card border-border/80 bg-card/70 hover:border-primary/40 hover:-translate-y-0.5'
       }`}
     >
       <div className="flex items-center gap-4">
@@ -408,21 +409,21 @@ export default function TripWizardPage() {
       <main className="app-shell mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
         <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-6">
-            <div className="animate-float-up rounded-[2rem] border border-white/10 bg-[linear-gradient(135deg,rgba(28,102,159,0.16),rgba(75,197,185,0.08),rgba(255,255,255,0.6))] p-8 shadow-[0_40px_120px_-60px_rgba(15,23,42,0.55)] glass-panel">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/60 px-4 py-2 text-xs font-semibold uppercase tracking-[0.28em] text-primary/80">
-                <Sparkles className="h-3.5 w-3.5" />
+            <div className="travel-panel animate-float-up rounded-[2.35rem] p-8">
+              <div className="travel-kicker">
+                <LogoMark className="h-4 w-4" />
                 {copy.aiBadge}
               </div>
 
               <div className="mt-6 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
                 <div className="max-w-2xl">
-                  <h1 className="text-balance text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
+                  <h1 className="brand-display text-balance text-5xl text-foreground">
                     {copy.smartQuestions}
                   </h1>
                   <p className="mt-3 max-w-xl text-base leading-7 text-muted-foreground">{copy.subtitle}</p>
                 </div>
 
-                <div className="min-w-[220px] rounded-[1.5rem] border border-white/10 bg-black/5 p-4 backdrop-blur">
+                <div className="travel-card min-w-[220px] rounded-[1.5rem] p-4">
                   <div className="mb-2 flex items-center justify-between text-sm">
                     <span className="font-medium text-muted-foreground">{`${copy.stepLabel} ${progress}`}</span>
                     <span className="font-semibold text-foreground">{`${progress}/${STEPS.length}`}</span>
@@ -438,7 +439,7 @@ export default function TripWizardPage() {
             </div>
 
             {sampleNotice && (
-              <Card className="rounded-[1.5rem] border-primary/25 bg-primary/8 p-4 text-sm text-foreground">
+              <Card className="travel-card rounded-[1.5rem] border-primary/25 bg-primary/8 p-4 text-sm text-foreground">
                 <p>{sampleNotice}</p>
                 <p className="mt-1 text-muted-foreground">{uiText.sampleHint}</p>
               </Card>
@@ -450,7 +451,7 @@ export default function TripWizardPage() {
               </Card>
             )}
 
-            <Card className="rounded-[2rem] border-white/10 bg-card/80 p-6 shadow-[0_36px_100px_-60px_rgba(15,23,42,0.6)] sm:p-8">
+            <Card className="travel-card rounded-[2rem] p-6 sm:p-8">
               {step === 'region' && (
                 <div className="space-y-4">
                   <h2 className="text-2xl font-semibold text-foreground">{copy.regionQuestion}</h2>
@@ -566,7 +567,7 @@ export default function TripWizardPage() {
                             }))
                           }
                           className={`rounded-[1.25rem] border p-4 text-left ${
-                            checked ? 'border-primary bg-primary/8' : 'border-border/80 hover:border-primary/35'
+                            checked ? 'travel-card-soft border-primary/30 bg-primary/8' : 'travel-card border-border/80 hover:border-primary/35'
                           }`}
                         >
                           <span className="font-medium text-foreground">{label}</span>
@@ -713,7 +714,7 @@ export default function TripWizardPage() {
           </div>
 
           <div className="space-y-6">
-            <Card className="rounded-[2rem] border-white/10 bg-card/80 p-6 shadow-[0_36px_100px_-60px_rgba(15,23,42,0.6)]">
+            <Card className="travel-card rounded-[2rem] p-6">
               <div className="flex items-center gap-3">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/12 text-primary">
                   <Brain className="h-5 w-5" />
@@ -732,39 +733,39 @@ export default function TripWizardPage() {
               </div>
             </Card>
 
-            <Card className="rounded-[2rem] border-white/10 bg-card/80 p-6">
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary/70">{uiText.preview}</p>
+            <Card className="travel-card rounded-[2rem] p-6">
+              <p className="travel-kicker">{uiText.preview}</p>
               <div className="mt-4 space-y-4">
-                <div className="rounded-[1.5rem] border border-border/80 bg-muted/25 p-5">
+                <div className="travel-card-soft rounded-[1.5rem] p-5">
                   <p className="text-sm text-muted-foreground">{copy.tripName}</p>
                   <p className="mt-2 text-xl font-semibold text-foreground">{tripData.title.trim() || suggestedTitle || uiText.untitledTrip}</p>
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-[1.25rem] border border-border/80 bg-muted/25 p-4">
+                  <div className="travel-card-soft rounded-[1.25rem] p-4">
                     <p className="text-sm text-muted-foreground">{copy.regionQuestion}</p>
                     <p className="mt-1 font-medium text-foreground">{previewRegion || uiText.selectRegion}</p>
                   </div>
-                  <div className="rounded-[1.25rem] border border-border/80 bg-muted/25 p-4">
+                  <div className="travel-card-soft rounded-[1.25rem] p-4">
                     <p className="text-sm text-muted-foreground">{copy.durationQuestion}</p>
                     <p className="mt-1 font-medium text-foreground">{previewDuration || uiText.selectDuration}</p>
                   </div>
-                  <div className="rounded-[1.25rem] border border-border/80 bg-muted/25 p-4 sm:col-span-2">
+                  <div className="travel-card-soft rounded-[1.25rem] p-4 sm:col-span-2">
                     <p className="text-sm text-muted-foreground">{copy.difficultyQuestion}</p>
                     <p className="mt-1 font-medium text-foreground">{previewDifficulty || uiText.selectDifficulty}</p>
                   </div>
-                  <div className="rounded-[1.25rem] border border-border/80 bg-muted/25 p-4 sm:col-span-2">
+                  <div className="travel-card-soft rounded-[1.25rem] p-4 sm:col-span-2">
                     <p className="text-sm text-muted-foreground">{uiText.startingAreaLabel}</p>
                     <p className="mt-1 font-medium text-foreground">{tripData.startingArea || uiText.startingAreaPlaceholder}</p>
                   </div>
                 </div>
 
-                <div className="rounded-[1.25rem] border border-border/80 bg-muted/25 p-4">
+                <div className="travel-card-soft rounded-[1.25rem] p-4">
                   <p className="text-sm text-muted-foreground">{uiText.selectedPreferences}</p>
                   {selectedPreferences.length > 0 ? (
                     <div className="mt-3 flex flex-wrap gap-2">
                       {selectedPreferences.map((label) => (
-                        <span key={label} className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-foreground">
+                        <span key={label} className="travel-chip">
                           {label}
                         </span>
                       ))}
@@ -775,7 +776,7 @@ export default function TripWizardPage() {
                 </div>
 
                 {(tripData.preferences.otherPreferences || tripData.plannerNotes) && (
-                  <div className="rounded-[1.25rem] border border-border/80 bg-muted/25 p-4">
+                  <div className="travel-card-soft rounded-[1.25rem] p-4">
                     <p className="text-sm text-muted-foreground">{uiText.plannerNotesLabel}</p>
                     <p className="mt-1 font-medium text-foreground">{tripData.preferences.otherPreferences || tripData.plannerNotes}</p>
                   </div>

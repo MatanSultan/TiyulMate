@@ -2,10 +2,11 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { ArrowLeft, Bot, Copy, Loader2, MapPin, Pencil, Share2, Sparkles, Trash2 } from 'lucide-react'
+import { ArrowLeft, Bot, Compass, Copy, Loader2, MapPin, Pencil, Share2, Trash2 } from 'lucide-react'
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Header } from '@/components/header'
+import { LogoMark } from '@/components/logo-mark'
 import { TripItinerary } from '@/components/trip-itinerary'
 import {
   AlertDialog,
@@ -445,8 +446,8 @@ export default function TripDetailPage() {
 
         <div className="mt-6 grid gap-8 xl:grid-cols-[1.15fr_0.85fr]">
           <section className="space-y-6">
-            <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-card/82 shadow-[0_40px_120px_-64px_rgba(15,23,42,0.58)]">
-              <div className="relative h-72 bg-gradient-to-br from-primary/16 via-accent/10 to-secondary/10 sm:h-96">
+            <div className="travel-card overflow-hidden rounded-[2.1rem]">
+              <div className="relative h-72 bg-gradient-to-br from-secondary/45 via-accent/12 to-primary/12 sm:h-96">
                 {coverImage && (
                   <Image
                     src={coverImage}
@@ -459,25 +460,25 @@ export default function TripDetailPage() {
                 )}
                 <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
                 <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8">
-                  <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/35 px-4 py-2 text-xs font-semibold uppercase tracking-[0.28em] text-white backdrop-blur">
-                    <Bot className="h-3.5 w-3.5" />
+                  <div className="travel-kicker bg-black/35 text-white backdrop-blur-md">
+                    <LogoMark className="h-4 w-4" />
                     {copy.aiBadge}
                   </div>
-                  <h1 className="mt-4 text-balance text-4xl font-semibold tracking-tight text-white sm:text-5xl">{trip.title}</h1>
+                  <h1 className="brand-display mt-4 text-balance text-5xl text-white">{trip.title}</h1>
                   <div className="mt-5 flex flex-wrap gap-3">
-                    <span className="inline-flex items-center gap-2 rounded-full bg-white/12 px-4 py-2 text-sm text-white backdrop-blur">
+                    <span className="travel-chip bg-white/14 text-white backdrop-blur-md">
                       <MapPin className="h-4 w-4" />
                       {getRegionLabel(trip.region, locale)}
                     </span>
-                    <span className="inline-flex items-center gap-2 rounded-full bg-white/12 px-4 py-2 text-sm text-white backdrop-blur">
-                      <Sparkles className="h-4 w-4" />
+                    <span className="travel-chip bg-white/14 text-white backdrop-blur-md">
+                      <Compass className="h-4 w-4" />
                       {getDurationLabel(trip.duration_type, locale)}
                     </span>
-                    <span className="inline-flex items-center gap-2 rounded-full bg-white/12 px-4 py-2 text-sm text-white backdrop-blur">
+                    <span className="travel-chip bg-white/14 text-white backdrop-blur-md">
                       {getDifficultyLabel(trip.difficulty, locale)}
                     </span>
                     {preferenceBadges.map((badge) => (
-                      <span key={badge} className="inline-flex items-center gap-2 rounded-full bg-white/12 px-4 py-2 text-sm text-white backdrop-blur">
+                      <span key={badge} className="travel-chip bg-white/14 text-white backdrop-blur-md">
                         {badge}
                       </span>
                     ))}
@@ -487,7 +488,7 @@ export default function TripDetailPage() {
 
               <div className="border-t border-white/10 p-6 sm:p-8">
                 {status && (
-                  <Card className="mb-4 rounded-[1.25rem] border-primary/25 bg-primary/8 p-4 text-sm text-foreground">
+                  <Card className="travel-card mb-4 rounded-[1.25rem] border-primary/25 bg-primary/8 p-4 text-sm text-foreground">
                     {status}
                   </Card>
                 )}
@@ -612,7 +613,7 @@ export default function TripDetailPage() {
                                 )
                               }
                               className={`rounded-[1.25rem] border p-4 text-left ${
-                                checked ? 'border-primary bg-primary/8' : 'border-border/80 hover:border-primary/35'
+                                checked ? 'travel-card-soft border-primary/30 bg-primary/8' : 'travel-card border-border/80 hover:border-primary/35'
                               }`}
                             >
                               {label}
@@ -737,7 +738,7 @@ export default function TripDetailPage() {
                         <p className="mb-3 text-sm font-medium text-foreground">{editorLabels.timeline}</p>
                         <div className="space-y-4">
                           {draft.days.map((day, index) => (
-                            <Card key={day.key} className="rounded-[1.5rem] border-white/10 bg-muted/20 p-4">
+                            <Card key={day.key} className="travel-card-soft rounded-[1.5rem] p-4">
                               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">{`${editorLabels.dayTitle} ${index + 1}`}</p>
                               <Input
                                 value={day.title}
@@ -817,7 +818,7 @@ export default function TripDetailPage() {
                 )}
 
                 {!editMode && Object.keys(trip.itinerary || {}).length === 0 && (
-                  <Card className="rounded-[1.75rem] border-white/10 bg-card/80 p-6">
+                  <Card className="travel-card rounded-[1.75rem] p-6">
                     <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary/70">{copy.noItineraryTitle}</p>
                     <p className="mt-3 text-sm leading-7 text-muted-foreground">{copy.noItineraryBody}</p>
                     <Button className="mt-5 rounded-full" onClick={handleGenerateItinerary} disabled={isGenerating}>
@@ -831,7 +832,7 @@ export default function TripDetailPage() {
           </section>
 
           <aside className="space-y-5">
-            <Card className="rounded-[2rem] border-white/10 bg-card/80 p-6">
+            <Card className="travel-card rounded-[2rem] p-6">
               <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary/70">{copy.actions}</p>
               <div className="mt-4 flex flex-col gap-3">
                 <Button className="justify-start rounded-full" onClick={() => setEditMode(true)}>
@@ -881,7 +882,7 @@ export default function TripDetailPage() {
               </div>
             </Card>
 
-            <Card className="rounded-[2rem] border-white/10 bg-card/80 p-6">
+            <Card className="travel-card rounded-[2rem] p-6">
               <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary/70">{copy.language}</p>
               <p className="mt-3 text-sm leading-7 text-muted-foreground">{uiText.languageHint}</p>
             </Card>

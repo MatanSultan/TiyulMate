@@ -13,7 +13,10 @@ export default async function LocaleLayout({ children, params }: Readonly<Locale
   return (
     <>
       <LocaleDocumentSync locale={locale} />
-      <div dir={locale === 'he' || locale === 'ar' ? 'rtl' : 'ltr'} className="min-h-screen">
+      <div
+        dir={locale === 'he' || locale === 'ar' ? 'rtl' : 'ltr'}
+        className={`locale-shell locale-${locale} min-h-screen`}
+      >
         {children}
       </div>
     </>

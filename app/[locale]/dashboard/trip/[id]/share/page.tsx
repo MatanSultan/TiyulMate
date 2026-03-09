@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/hooks/use-auth'
 import { resolveLocale, t, type Locale } from '@/lib/i18n'
+import { buildShareUrl, getClientSiteUrl } from '@/lib/site-url'
 import { siteCopy } from '@/lib/site-copy'
 import { createClient } from '@/lib/supabase/client'
 import type { TripRecord } from '@/lib/trip-model'
@@ -55,7 +56,7 @@ export default function ShareTripPage() {
   const [creating, setCreating] = useState(false)
 
   const baseUrl = useMemo(
-    () => process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : ''),
+    () => getClientSiteUrl(),
     [],
   )
 
@@ -90,7 +91,7 @@ export default function ShareTripPage() {
         if (shareFetchError) throw shareFetchError
 
         if (shareData?.token) {
-          setShareLink(`${baseUrl}/shared/${shareData.token}`)
+          setShareLink(buildShareUrl(shareData.token, baseUrl))
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : uiText.loadError)
@@ -121,7 +122,7 @@ export default function ShareTripPage() {
       if (existingShareError) throw existingShareError
 
       if (existingShare?.token) {
-        setShareLink(`${baseUrl}/shared/${existingShare.token}`)
+        setShareLink(buildShareUrl(existingShare.token, baseUrl))
         return
       }
 
@@ -135,7 +136,7 @@ export default function ShareTripPage() {
 
       if (shareError) throw shareError
 
-      setShareLink(`${baseUrl}/shared/${token}`)
+      setShareLink(buildShareUrl(token, baseUrl))
     } catch (err) {
       setError(err instanceof Error ? err.message : uiText.shareError)
     } finally {

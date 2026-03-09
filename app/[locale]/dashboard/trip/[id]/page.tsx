@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { ArrowLeft, Bot, Loader2, MapPin, Pencil, Share2, Sparkles, Trash2 } from 'lucide-react'
+import { ArrowLeft, Bot, Copy, Loader2, MapPin, Pencil, Share2, Sparkles, Trash2 } from 'lucide-react'
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Header } from '@/components/header'
@@ -21,21 +21,30 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { useAuth } from '@/hooks/use-auth'
-import { deleteTrip, updateTrip } from '@/hooks/use-trips'
+import { deleteTrip, duplicateTrip, updateTrip } from '@/hooks/use-trips'
 import { resolveLocale, t, type Locale } from '@/lib/i18n'
 import { createClient } from '@/lib/supabase/client'
 import { tripCopy } from '@/lib/trip-copy'
-import { asTripPreferences, getTripCoverImage, type TripRecord } from '@/lib/trip-model'
+import { asTripPreferences, getTripCoverImage, normalizeDayEntries, normalizeStringArray, type TripRecord } from '@/lib/trip-model'
 import {
   DIFFICULTIES,
   DURATIONS,
   getDifficultyLabel,
   getDurationLabel,
+  getEnabledPreferenceLabels,
   getPreferenceOptions,
   getRegionLabel,
   REGIONS,
 } from '@/lib/trip-options'
+
+type EditableDayState = {
+  key: string
+  title: string
+  summary: string
+  bulletsText: string
+}
 
 type EditableTripState = {
   title: string
@@ -44,6 +53,19 @@ type EditableTripState = {
   difficulty: string
   coverImageUrl: string
   mapQuery: string
+  startingArea: string
+  plannerNotes: string
+  overview: string
+  vibe: string
+  whoItsFor: string
+  bestTime: string
+  weatherNote: string
+  tagsText: string
+  checklistText: string
+  practicalNotesText: string
+  accessibilityNotesText: string
+  hikingTipsText: string
+  days: EditableDayState[]
   preferences: ReturnType<typeof createPreferenceState>
 }
 
@@ -51,6 +73,11 @@ function createPreferenceState(preferences?: Record<string, unknown>) {
   const normalized = asTripPreferences(preferences)
 
   return {
+    familyFriendly: Boolean(normalized.familyFriendly),
+    kidsFriendly: Boolean(normalized.kidsFriendly),
+    strollerFriendly: Boolean(normalized.strollerFriendly),
+    dogFriendly: Boolean(normalized.dogFriendly),
+    romantic: Boolean(normalized.romantic),
     waterFeatures: Boolean(normalized.waterFeatures),
     camping: Boolean(normalized.camping),
     viewpoints: Boolean(normalized.viewpoints),
@@ -65,16 +92,39 @@ function createPreferenceState(preferences?: Record<string, unknown>) {
 }
 
 function createEditableState(trip: TripRecord): EditableTripState {
+  const itinerary = trip.itinerary || {}
+
   return {
     title: trip.title,
     region: trip.region,
     duration_type: trip.duration_type,
     difficulty: trip.difficulty,
-    coverImageUrl: typeof trip.itinerary?.cover_image_url === 'string' ? trip.itinerary.cover_image_url : '',
+    coverImageUrl: typeof itinerary.cover_image_url === 'string' ? itinerary.cover_image_url : '',
     mapQuery:
-      typeof (trip.itinerary?.route?.map_query || trip.itinerary?.map_query) === 'string'
-        ? String(trip.itinerary?.route?.map_query || trip.itinerary?.map_query)
+      typeof (itinerary.route?.map_query || itinerary.map_query) === 'string'
+        ? String(itinerary.route?.map_query || itinerary.map_query)
         : '',
+    startingArea:
+      typeof (itinerary.route?.start || itinerary.starting_area) === 'string'
+        ? String(itinerary.route?.start || itinerary.starting_area)
+        : '',
+    plannerNotes: typeof itinerary.planner_notes === 'string' ? itinerary.planner_notes : '',
+    overview: typeof itinerary.overview === 'string' ? itinerary.overview : '',
+    vibe: typeof itinerary.vibe === 'string' ? itinerary.vibe : '',
+    whoItsFor: typeof itinerary.who_its_for === 'string' ? itinerary.who_its_for : '',
+    bestTime: typeof itinerary.best_time === 'string' ? itinerary.best_time : '',
+    weatherNote: typeof itinerary.weather_note === 'string' ? itinerary.weather_note : '',
+    tagsText: normalizeStringArray(itinerary.tags).join('\n'),
+    checklistText: normalizeStringArray(itinerary.checklist).join('\n'),
+    practicalNotesText: normalizeStringArray(itinerary.practical_notes).join('\n'),
+    accessibilityNotesText: normalizeStringArray(itinerary.accessibility_notes).join('\n'),
+    hikingTipsText: normalizeStringArray(itinerary.hiking_tips).join('\n'),
+    days: normalizeDayEntries(itinerary, trip.language_code || 'en').map((day) => ({
+      key: day.key,
+      title: day.label,
+      summary: day.summary,
+      bulletsText: day.bullets.join('\n'),
+    })),
     preferences: createPreferenceState(trip.preferences),
   }
 }
@@ -105,6 +155,16 @@ function buildUiText(locale: Locale) {
         : locale === 'ar'
           ? 'تم حفظ التغييرات.'
           : 'Your changes have been saved.',
+    duplicatedStatus:
+      locale === 'he'
+        ? 'נוצר עותק חדש של הטיול.'
+        : locale === 'ar'
+          ? 'تم إنشاء نسخة جديدة من الرحلة.'
+          : 'A duplicate trip was created.',
+    duplicateError:
+      locale === 'he' ? 'שכפול הטיול נכשל' : locale === 'ar' ? 'فشل نسخ الرحلة' : 'Failed to duplicate trip',
+    duplicateAction:
+      locale === 'he' ? 'שכפל טיול' : locale === 'ar' ? 'انسخ الرحلة' : 'Duplicate trip',
     languageHint:
       locale === 'he'
         ? 'כל יצירה מחדש תבוצע בשפה הפעילה כרגע.'
@@ -123,6 +183,27 @@ export default function TripDetailPage() {
   const tripId = params.id as string
   const copy = tripCopy[locale].detail
   const uiText = useMemo(() => buildUiText(locale), [locale])
+  const editorLabels = useMemo(
+    () => ({
+      startingArea: locale === 'he' ? 'אזור יציאה' : locale === 'ar' ? 'منطقة الانطلاق' : 'Starting area',
+      plannerNotes: locale === 'he' ? 'הערות ל-AI' : locale === 'ar' ? 'ملاحظات للذكاء الاصطناعي' : 'Notes for the AI',
+      overview: locale === 'he' ? 'סיכום' : locale === 'ar' ? 'الملخص' : 'Overview',
+      vibe: locale === 'he' ? 'אווירה' : locale === 'ar' ? 'الأجواء' : 'Vibe',
+      whoItsFor: locale === 'he' ? 'למי זה מתאים' : locale === 'ar' ? 'لمن تناسب الرحلة' : 'Who it is for',
+      bestTime: locale === 'he' ? 'הזמן המומלץ' : locale === 'ar' ? 'أفضل وقت' : 'Best time',
+      weather: locale === 'he' ? 'הערת מזג אוויר' : locale === 'ar' ? 'ملاحظة طقس' : 'Weather note',
+      tags: locale === 'he' ? 'תגיות' : locale === 'ar' ? 'وسوم' : 'Tags',
+      checklist: locale === 'he' ? 'צ׳קליסט' : locale === 'ar' ? 'قائمة تجهيزات' : 'Checklist',
+      practicalNotes: locale === 'he' ? 'הערות פרקטיות' : locale === 'ar' ? 'ملاحظات عملية' : 'Practical notes',
+      accessibility: locale === 'he' ? 'הערות נגישות' : locale === 'ar' ? 'ملاحظات إمكانية الوصول' : 'Accessibility notes',
+      hikingTips: locale === 'he' ? 'טיפים' : locale === 'ar' ? 'نصائح' : 'Tips',
+      timeline: locale === 'he' ? 'ציר זמן' : locale === 'ar' ? 'الجدول اليومي' : 'Timeline',
+      dayTitle: locale === 'he' ? 'כותרת יום' : locale === 'ar' ? 'عنوان اليوم' : 'Day title',
+      daySummary: locale === 'he' ? 'סיכום יום' : locale === 'ar' ? 'ملخص اليوم' : 'Day summary',
+      dayBullets: locale === 'he' ? 'פעילויות / נקודות עיקריות' : locale === 'ar' ? 'الأنشطة / النقاط الرئيسية' : 'Activities / highlights',
+    }),
+    [locale],
+  )
 
   const [trip, setTrip] = useState<TripRecord | null>(null)
   const [draft, setDraft] = useState<EditableTripState | null>(null)
@@ -133,8 +214,13 @@ export default function TripDetailPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [isDuplicating, setIsDuplicating] = useState(false)
 
   const coverImage = useMemo(() => (trip ? getTripCoverImage(trip) : null), [trip])
+  const preferenceBadges = useMemo(
+    () => (trip ? getEnabledPreferenceLabels(trip.preferences, locale, 6) : []),
+    [locale, trip],
+  )
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -179,7 +265,7 @@ export default function TripDetailPage() {
   }, [searchParams, uiText.createdStatus])
 
   const handleGenerateItinerary = async () => {
-    if (!trip) return
+    if (!trip || !draft) return
 
     try {
       setIsGenerating(true)
@@ -193,16 +279,15 @@ export default function TripDetailPage() {
         },
         body: JSON.stringify({
           tripId: trip.id,
-          title: trip.title,
-          region: trip.region,
-          duration: trip.duration_type,
-          difficulty: trip.difficulty,
-          preferences: trip.preferences,
-          mapQuery:
-            typeof (trip.itinerary?.route?.map_query || trip.itinerary?.map_query) === 'string'
-              ? String(trip.itinerary?.route?.map_query || trip.itinerary?.map_query)
-              : '',
-          coverImageUrl: typeof trip.itinerary?.cover_image_url === 'string' ? trip.itinerary.cover_image_url : '',
+          title: draft.title,
+          region: draft.region,
+          duration: draft.duration_type,
+          difficulty: draft.difficulty,
+          preferences: draft.preferences,
+          startingArea: draft.startingArea,
+          plannerNotes: draft.plannerNotes,
+          mapQuery: draft.mapQuery,
+          coverImageUrl: draft.coverImageUrl,
           locale,
         }),
       })
@@ -236,15 +321,39 @@ export default function TripDetailPage() {
         region: draft.region,
         duration_type: draft.duration_type,
         difficulty: draft.difficulty,
+        language_code: locale,
         preferences: draft.preferences,
         itinerary: {
           ...trip.itinerary,
+          overview: draft.overview.trim(),
+          vibe: draft.vibe.trim(),
+          who_its_for: draft.whoItsFor.trim(),
+          best_time: draft.bestTime.trim(),
+          weather_note: draft.weatherNote.trim(),
+          tags: normalizeStringArray(draft.tagsText),
+          checklist: normalizeStringArray(draft.checklistText),
+          practical_notes: normalizeStringArray(draft.practicalNotesText),
+          accessibility_notes: normalizeStringArray(draft.accessibilityNotesText),
+          hiking_tips: normalizeStringArray(draft.hikingTipsText),
+          planner_notes: draft.plannerNotes.trim(),
+          starting_area: draft.startingArea.trim(),
           cover_image_url: draft.coverImageUrl.trim(),
           map_query: draft.mapQuery.trim(),
           route: {
             ...(trip.itinerary?.route || {}),
+            start: draft.startingArea.trim(),
             map_query: draft.mapQuery.trim() || trip.itinerary?.route?.map_query || '',
           },
+          ...Object.fromEntries(
+            draft.days.map((day, index) => [
+              day.key || `day_${index + 1}`,
+              {
+                title: day.title.trim(),
+                summary: day.summary.trim(),
+                activities: normalizeStringArray(day.bulletsText),
+              },
+            ]),
+          ),
         },
       })
 
@@ -257,6 +366,25 @@ export default function TripDetailPage() {
       setError(err instanceof Error ? err.message : uiText.saveError)
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const handleDuplicate = async () => {
+    if (!trip) return
+
+    try {
+      setIsDuplicating(true)
+      setError(null)
+      const duplicated = await duplicateTrip(
+        trip,
+        locale === 'he' ? `${trip.title} (עותק)` : locale === 'ar' ? `${trip.title} (نسخة)` : `${trip.title} (Copy)`,
+      )
+      setStatus(uiText.duplicatedStatus)
+      router.push(`/${locale}/dashboard/trip/${duplicated.id}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : uiText.duplicateError)
+    } finally {
+      setIsDuplicating(false)
     }
   }
 
@@ -348,6 +476,11 @@ export default function TripDetailPage() {
                     <span className="inline-flex items-center gap-2 rounded-full bg-white/12 px-4 py-2 text-sm text-white backdrop-blur">
                       {getDifficultyLabel(trip.difficulty, locale)}
                     </span>
+                    {preferenceBadges.map((badge) => (
+                      <span key={badge} className="inline-flex items-center gap-2 rounded-full bg-white/12 px-4 py-2 text-sm text-white backdrop-blur">
+                        {badge}
+                      </span>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -435,6 +568,24 @@ export default function TripDetailPage() {
                           className="h-12 rounded-2xl"
                         />
                       </div>
+
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-foreground">{editorLabels.startingArea}</label>
+                        <Input
+                          value={draft.startingArea}
+                          onChange={(event) => setDraft((current) => (current ? { ...current, startingArea: event.target.value } : current))}
+                          className="h-12 rounded-2xl"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">{editorLabels.plannerNotes}</label>
+                        <Textarea
+                          value={draft.plannerNotes}
+                          onChange={(event) => setDraft((current) => (current ? { ...current, plannerNotes: event.target.value } : current))}
+                          className="min-h-28 rounded-[1.5rem]"
+                        />
+                      </div>
                     </div>
 
                     <div>
@@ -489,6 +640,161 @@ export default function TripDetailPage() {
                       />
                     </div>
 
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-foreground">{editorLabels.overview}</label>
+                        <Textarea
+                          value={draft.overview}
+                          onChange={(event) => setDraft((current) => (current ? { ...current, overview: event.target.value } : current))}
+                          className="min-h-28 rounded-[1.5rem]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-foreground">{editorLabels.vibe}</label>
+                        <Textarea
+                          value={draft.vibe}
+                          onChange={(event) => setDraft((current) => (current ? { ...current, vibe: event.target.value } : current))}
+                          className="min-h-28 rounded-[1.5rem]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-foreground">{editorLabels.whoItsFor}</label>
+                        <Textarea
+                          value={draft.whoItsFor}
+                          onChange={(event) => setDraft((current) => (current ? { ...current, whoItsFor: event.target.value } : current))}
+                          className="min-h-24 rounded-[1.5rem]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-foreground">{editorLabels.bestTime}</label>
+                        <Input
+                          value={draft.bestTime}
+                          onChange={(event) => setDraft((current) => (current ? { ...current, bestTime: event.target.value } : current))}
+                          className="h-12 rounded-2xl"
+                        />
+                      </div>
+
+                      <div className="lg:col-span-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">{editorLabels.weather}</label>
+                        <Textarea
+                          value={draft.weatherNote}
+                          onChange={(event) => setDraft((current) => (current ? { ...current, weatherNote: event.target.value } : current))}
+                          className="min-h-24 rounded-[1.5rem]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-foreground">{editorLabels.tags}</label>
+                        <Textarea
+                          value={draft.tagsText}
+                          onChange={(event) => setDraft((current) => (current ? { ...current, tagsText: event.target.value } : current))}
+                          className="min-h-24 rounded-[1.5rem]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-foreground">{editorLabels.checklist}</label>
+                        <Textarea
+                          value={draft.checklistText}
+                          onChange={(event) => setDraft((current) => (current ? { ...current, checklistText: event.target.value } : current))}
+                          className="min-h-24 rounded-[1.5rem]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-foreground">{editorLabels.practicalNotes}</label>
+                        <Textarea
+                          value={draft.practicalNotesText}
+                          onChange={(event) => setDraft((current) => (current ? { ...current, practicalNotesText: event.target.value } : current))}
+                          className="min-h-24 rounded-[1.5rem]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-foreground">{editorLabels.accessibility}</label>
+                        <Textarea
+                          value={draft.accessibilityNotesText}
+                          onChange={(event) => setDraft((current) => (current ? { ...current, accessibilityNotesText: event.target.value } : current))}
+                          className="min-h-24 rounded-[1.5rem]"
+                        />
+                      </div>
+
+                      <div className="lg:col-span-2">
+                        <label className="mb-2 block text-sm font-medium text-foreground">{editorLabels.hikingTips}</label>
+                        <Textarea
+                          value={draft.hikingTipsText}
+                          onChange={(event) => setDraft((current) => (current ? { ...current, hikingTipsText: event.target.value } : current))}
+                          className="min-h-24 rounded-[1.5rem]"
+                        />
+                      </div>
+                    </div>
+
+                    {draft.days.length > 0 && (
+                      <div>
+                        <p className="mb-3 text-sm font-medium text-foreground">{editorLabels.timeline}</p>
+                        <div className="space-y-4">
+                          {draft.days.map((day, index) => (
+                            <Card key={day.key} className="rounded-[1.5rem] border-white/10 bg-muted/20 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">{`${editorLabels.dayTitle} ${index + 1}`}</p>
+                              <Input
+                                value={day.title}
+                                onChange={(event) =>
+                                  setDraft((current) =>
+                                    current
+                                      ? {
+                                          ...current,
+                                          days: current.days.map((entry) =>
+                                            entry.key === day.key ? { ...entry, title: event.target.value } : entry,
+                                          ),
+                                        }
+                                      : current,
+                                  )
+                                }
+                                className="mt-3 h-12 rounded-2xl"
+                              />
+                              <label className="mb-2 mt-4 block text-sm font-medium text-foreground">{editorLabels.daySummary}</label>
+                              <Textarea
+                                value={day.summary}
+                                onChange={(event) =>
+                                  setDraft((current) =>
+                                    current
+                                      ? {
+                                          ...current,
+                                          days: current.days.map((entry) =>
+                                            entry.key === day.key ? { ...entry, summary: event.target.value } : entry,
+                                          ),
+                                        }
+                                      : current,
+                                  )
+                                }
+                                className="min-h-24 rounded-[1.5rem]"
+                              />
+                              <label className="mb-2 mt-4 block text-sm font-medium text-foreground">{editorLabels.dayBullets}</label>
+                              <Textarea
+                                value={day.bulletsText}
+                                onChange={(event) =>
+                                  setDraft((current) =>
+                                    current
+                                      ? {
+                                          ...current,
+                                          days: current.days.map((entry) =>
+                                            entry.key === day.key ? { ...entry, bulletsText: event.target.value } : entry,
+                                          ),
+                                        }
+                                      : current,
+                                  )
+                                }
+                                className="min-h-24 rounded-[1.5rem]"
+                              />
+                            </Card>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex flex-col gap-3 sm:flex-row">
                       <Button className="rounded-full px-6" onClick={handleSave} disabled={isSaving}>
                         {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -531,6 +837,10 @@ export default function TripDetailPage() {
                 <Button className="justify-start rounded-full" onClick={() => setEditMode(true)}>
                   <Pencil className="h-4 w-4" />
                   {copy.edit}
+                </Button>
+                <Button variant="outline" className="justify-start rounded-full" onClick={handleDuplicate} disabled={isDuplicating}>
+                  {isDuplicating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+                  {uiText.duplicateAction}
                 </Button>
                 <Button variant="outline" className="justify-start rounded-full" onClick={handleGenerateItinerary} disabled={isGenerating}>
                   {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}

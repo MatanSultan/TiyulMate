@@ -1,95 +1,160 @@
 'use client'
 
 import Link from 'next/link'
+import { useMemo, useState } from 'react'
+import { ArrowRight, Clock3, MapPin, Sparkles, TrendingUp } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
+import { type Locale } from '@/lib/i18n'
+import { getLocalizedSampleTrips, type SampleTripId } from '@/lib/sample-trips'
+import { siteCopy } from '@/lib/site-copy'
+import { getDifficultyLabel, getDurationLabel, getRegionLabel } from '@/lib/trip-options'
 import { Button } from '@/components/ui/button'
-import { READY_MADE_TRIPS, type Locale, isRTL, t } from '@/lib/i18n'
-import { getDifficultyLabel } from '@/lib/trip-options'
-import { MapPin, Clock, TrendingUp } from 'lucide-react'
+import { Card } from '@/components/ui/card'
 
 export function ReadyMadeTrips({ locale = 'en' }: { locale?: Locale }) {
-  const trips = READY_MADE_TRIPS[locale] || READY_MADE_TRIPS['en']
-  const rtl = isRTL(locale)
+  const { user } = useAuth()
+  const copy = siteCopy[locale].landing
+  const samples = useMemo(() => getLocalizedSampleTrips(locale), [locale])
+  const [selectedId, setSelectedId] = useState<SampleTripId>(samples[0]?.id || 'family-springs')
 
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case 'easy':
-        return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-      case 'moderate':
-        return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
-      case 'hard':
-        return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
+  const selectedSample = samples.find((sample) => sample.id === selectedId) || samples[0]
+  const baseHref = user ? `/${locale}/dashboard/trip-wizard` : `/${locale}/auth/sign-up`
+  const getSampleHref = (sampleId: string) => `${baseHref}?sample=${sampleId}`
+
+  if (!selectedSample) {
+    return null
   }
 
   return (
-    <section className="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-transparent via-primary/5 to-transparent">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-16 text-center">
-          <h2 className="mb-4 text-3xl md:text-4xl font-bold text-foreground">
-            {t('landing.readyMade', locale)}
-          </h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            {locale === 'en'
-              ? 'Explore curated hiking experiences crafted by adventure experts'
-              : locale === 'he'
-              ? 'גלה חוויות טיול מקוצרות שיצרו מומחי ההרפתקאות'
-              : 'اكتشف تجارب الرحلات المنتقاة التي أنشأها خبراء المغامرات'}
-          </p>
-        </div>
-
-        <div className={`grid gap-6 md:grid-cols-3 ${rtl ? 'direction-rtl' : ''}`}>
-          {trips.map((trip) => (
+    <section className="py-8">
+      <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+        <Card className="overflow-hidden rounded-[2rem] border-white/10 bg-card/82 p-0 shadow-[0_38px_110px_-68px_rgba(15,23,42,0.6)]">
+          <div className="relative h-72 bg-gradient-to-br from-primary/18 via-accent/10 to-secondary/16 sm:h-80">
             <div
-              key={trip.id}
-              className="group rounded-2xl border border-border bg-card overflow-hidden hover:shadow-xl hover:border-primary/50 transition-all duration-300"
-            >
-              {/* Image Placeholder with Gradient */}
-              <div className="h-48 bg-gradient-to-br from-primary/20 via-accent/10 to-secondary/20 flex items-center justify-center overflow-hidden relative">
-                <div className="absolute inset-0 bg-gradient-to-t from-card via-transparent to-transparent opacity-50" />
-                <div className="text-center z-10 opacity-75 group-hover:opacity-100 transition-opacity">
-                  <MapPin className="h-12 w-12 text-primary/50 mx-auto mb-2" />
-                  <p className="text-sm font-semibold text-muted-foreground">{trip.region}</p>
-                </div>
+              className="absolute inset-0 bg-cover bg-center"
+              style={{ backgroundImage: `url(${selectedSample.coverImageUrl})` }}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/35 px-4 py-2 text-xs font-semibold uppercase tracking-[0.28em] text-white backdrop-blur">
+                <Sparkles className="h-3.5 w-3.5" />
+                {selectedSample.theme}
               </div>
+              <h3 className="mt-4 max-w-2xl text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+                {selectedSample.title}
+              </h3>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-white/82">{selectedSample.summary}</p>
+            </div>
+          </div>
 
-              {/* Content */}
-              <div className="p-6">
-                <h3 className="font-bold text-lg text-foreground mb-2 group-hover:text-primary transition-colors line-clamp-2">
-                  {trip.title}
-                </h3>
-                <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
-                  {trip.description}
-                </p>
-
-                {/* Metadata */}
-                <div className={`flex items-center gap-4 mb-4 text-sm text-muted-foreground ${rtl ? 'flex-row-reverse' : ''}`}>
-                  <div className="flex items-center gap-1">
-                    <Clock className="h-4 w-4" />
-                    <span>{trip.duration} {locale === 'en' ? 'days' : locale === 'he' ? 'ימים' : 'أيام'}</span>
-                  </div>
-                  <div className={`flex items-center gap-1 ${rtl ? 'flex-row-reverse' : ''}`}>
-                    <TrendingUp className="h-4 w-4" />
-                    <span
-                      className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${getDifficultyColor(
-                        trip.difficulty
-                      )}`}
-                    >
-                      {getDifficultyLabel(trip.difficulty, locale)}
-                    </span>
-                  </div>
+          <div className="space-y-6 p-6 sm:p-8">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-[1.35rem] bg-muted/35 p-4">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">
+                  <MapPin className="h-3.5 w-3.5" />
+                  {getRegionLabel(selectedSample.seed.region, locale)}
                 </div>
-
-                {/* CTA Button */}
-                <Button className="w-full" asChild>
-                  <Link href={`/${locale}/auth/sign-up?trip=${trip.id}`}>
-                    {t('landing.exploreTrips', locale)}
-                  </Link>
-                </Button>
+                <p className="mt-2 text-sm text-muted-foreground">{selectedSample.audience}</p>
+              </div>
+              <div className="rounded-[1.35rem] bg-muted/35 p-4">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">
+                  <Clock3 className="h-3.5 w-3.5" />
+                  {getDurationLabel(selectedSample.seed.duration_type, locale)}
+                </div>
+                <p className="mt-2 text-sm text-muted-foreground">{selectedSample.durationNote}</p>
+              </div>
+              <div className="rounded-[1.35rem] bg-muted/35 p-4">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">
+                  <TrendingUp className="h-3.5 w-3.5" />
+                  {getDifficultyLabel(selectedSample.seed.difficulty, locale)}
+                </div>
+                <p className="mt-2 text-sm text-muted-foreground">{selectedSample.seed.startingArea}</p>
               </div>
             </div>
-          ))}
+
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary/70">{copy.readyMadePreview}</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {selectedSample.badges.map((badge) => (
+                  <span
+                    key={badge}
+                    className="rounded-full border border-primary/15 bg-primary/8 px-3 py-1 text-xs font-medium text-foreground"
+                  >
+                    {badge}
+                  </span>
+                ))}
+              </div>
+              <ul className="mt-5 space-y-3">
+                {selectedSample.highlights.map((highlight) => (
+                  <li key={highlight} className="flex gap-3 text-sm leading-7 text-foreground/88">
+                    <span className="mt-2 h-2 w-2 rounded-full bg-primary" />
+                    <span>{highlight}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Button asChild className="rounded-full px-6">
+                <Link href={getSampleHref(selectedSample.id)}>
+                  {copy.readyMadeUseBase}
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+              <Button asChild variant="outline" className="rounded-full px-6">
+                <Link href={getSampleHref(selectedSample.id)}>{copy.readyMadeGenerateSimilar}</Link>
+              </Button>
+            </div>
+          </div>
+        </Card>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          {samples.map((sample, index) => {
+            const active = sample.id === selectedSample.id
+
+            return (
+              <button
+                key={sample.id}
+                type="button"
+                onClick={() => setSelectedId(sample.id)}
+                className="text-left"
+              >
+                <Card
+                  className={`h-full rounded-[1.75rem] border p-5 transition-all duration-300 ${
+                    active
+                      ? 'border-primary bg-primary/8 shadow-[0_28px_90px_-60px_var(--color-primary)]'
+                      : 'border-white/10 bg-card/78 hover:-translate-y-1 hover:border-primary/35'
+                  }`}
+                  style={{ animationDelay: `${index * 70}ms` }}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary/70">{sample.theme}</p>
+                      <h3 className="mt-3 text-xl font-semibold tracking-tight text-foreground">{sample.title}</h3>
+                    </div>
+                    <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+                      {getDurationLabel(sample.seed.duration_type, locale)}
+                    </span>
+                  </div>
+
+                  <p className="mt-3 text-sm leading-7 text-muted-foreground">{sample.summary}</p>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {sample.badges.slice(0, 3).map((badge) => (
+                      <span key={badge} className="rounded-full bg-muted/50 px-3 py-1 text-xs text-foreground/80">
+                        {badge}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className="mt-5 flex items-center justify-between text-sm text-muted-foreground">
+                    <span>{getRegionLabel(sample.seed.region, locale)}</span>
+                    <span>{copy.readyMadePreview}</span>
+                  </div>
+                </Card>
+              </button>
+            )
+          })}
         </div>
       </div>
     </section>

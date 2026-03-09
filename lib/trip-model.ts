@@ -1,6 +1,11 @@
 import { type Locale } from '@/lib/i18n'
 
 export interface TripPreferences {
+  familyFriendly?: boolean
+  kidsFriendly?: boolean
+  strollerFriendly?: boolean
+  dogFriendly?: boolean
+  romantic?: boolean
   waterFeatures?: boolean
   camping?: boolean
   viewpoints?: boolean
@@ -47,8 +52,16 @@ export interface TripDayData {
 export interface TripItinerary {
   title?: string
   overview?: string
+  who_its_for?: string
   vibe?: string
   best_time?: string
+  weather_note?: string
+  accessibility_notes?: string | string[]
+  checklist?: string[]
+  tags?: string[]
+  practical_notes?: string[]
+  planner_notes?: string
+  starting_area?: string
   hiking_tips?: string | string[]
   estimated_distance?: string
   estimated_elevation_gain?: string
@@ -58,6 +71,7 @@ export interface TripItinerary {
   gallery?: Array<string | TripImageAsset>
   route?: TripRouteData
   map_query?: string
+  language?: Locale
   [key: string]: unknown
 }
 
@@ -172,4 +186,19 @@ export function stringifyUnknown(value: unknown) {
   if (Array.isArray(value)) return value.map((item) => String(item)).join(', ')
   if (value == null) return ''
   return String(value)
+}
+
+export function normalizeStringArray(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean)
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(/\r?\n|,/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+
+  return []
 }

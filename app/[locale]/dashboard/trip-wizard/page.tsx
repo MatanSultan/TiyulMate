@@ -2,20 +2,24 @@
 
 import { Brain, Clock3, Compass, MapPin, Sparkles, TrendingUp } from 'lucide-react'
 import { Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Header } from '@/components/header'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { useAuth } from '@/hooks/use-auth'
 import { createTrip, useTrips } from '@/hooks/use-trips'
 import { resolveLocale, t, type Locale } from '@/lib/i18n'
+import { getSampleTripSeed } from '@/lib/sample-trips'
 import { tripCopy } from '@/lib/trip-copy'
+import { type TripPreferences } from '@/lib/trip-model'
 import {
   DIFFICULTIES,
   DURATIONS,
   getDifficultyLabel,
   getDurationLabel,
+  getEnabledPreferenceLabels,
   getPreferenceOptions,
   getRegionLabel,
   getSuggestedTripTitle,
@@ -35,9 +39,16 @@ interface TripWizardData {
   customRegion: string
   customDuration: string
   customDifficulty: string
+  startingArea: string
+  plannerNotes: string
   coverImageUrl: string
   mapQuery: string
-  preferences: {
+  preferences: TripPreferences & {
+    familyFriendly: boolean
+    kidsFriendly: boolean
+    strollerFriendly: boolean
+    dogFriendly: boolean
+    romantic: boolean
     waterFeatures: boolean
     camping: boolean
     viewpoints: boolean
@@ -86,6 +97,45 @@ function buildUiText(locale: Locale) {
         : locale === 'ar'
           ? 'ألصق رابط صورة غلاف للرحلة'
           : 'Paste an image URL for the trip cover',
+    startingAreaLabel: locale === 'he' ? 'אזור יציאה' : locale === 'ar' ? 'منطقة الانطلاق' : 'Starting area',
+    startingAreaPlaceholder:
+      locale === 'he'
+        ? 'מאיפה אתם יוצאים?'
+        : locale === 'ar'
+          ? 'من أين ستنطلقون؟'
+          : 'Where are you starting from?',
+    plannerNotesLabel: locale === 'he' ? 'הערות ל-AI' : locale === 'ar' ? 'ملاحظات للذكاء الاصطناعي' : 'Notes for the AI',
+    plannerNotesPlaceholder:
+      locale === 'he'
+        ? 'מה חשוב שהטיול ירגיש? אילו מגבלות או העדפות נוספות יש?'
+        : locale === 'ar'
+          ? 'كيف يجب أن تشعر الرحلة؟ ما القيود أو التفضيلات الإضافية؟'
+          : 'What should the trip feel like? Any constraints or extra preferences?',
+    selectedPreferences: locale === 'he' ? 'דגשים שנבחרו' : locale === 'ar' ? 'التفضيلات المختارة' : 'Selected preferences',
+    noPreferencesYet:
+      locale === 'he'
+        ? 'עדיין לא בחרת דגשים מיוחדים.'
+        : locale === 'ar'
+          ? 'لم يتم اختيار تفضيلات إضافية بعد.'
+          : 'No extra preferences selected yet.',
+    sampleLoaded:
+      locale === 'he'
+        ? 'הדוגמה שבחרת נטענה ומוכנה להתאמה אישית.'
+        : locale === 'ar'
+          ? 'تم تحميل النموذج الذي اخترته وهو جاهز للتخصيص.'
+          : 'Your selected sample has been loaded and is ready to personalize.',
+    sampleHint:
+      locale === 'he'
+        ? 'אפשר לשנות כל שדה לפני היצירה.'
+        : locale === 'ar'
+          ? 'يمكنك تعديل كل حقل قبل الإنشاء.'
+          : 'You can change every field before generation.',
+    reviewHint:
+      locale === 'he'
+        ? 'כל מה שתכתוב כאן נשמר ונשלח גם ל-AI.'
+        : locale === 'ar'
+          ? 'كل ما تكتبه هنا يتم حفظه وإرساله أيضًا إلى الذكاء الاصطناعي.'
+          : 'Everything you add here is saved and also sent to the AI.',
   }
 }
 
@@ -93,11 +143,13 @@ export default function TripWizardPage() {
   const { user, loading: userLoading } = useAuth()
   const router = useRouter()
   const params = useParams()
+  const searchParams = useSearchParams()
   const locale = resolveLocale(params.locale as string) as Locale
   const copy = tripCopy[locale].wizard
   const { mutate } = useTrips()
   const [step, setStep] = useState<Step>('region')
   const [error, setError] = useState<string | null>(null)
+  const [sampleNotice, setSampleNotice] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationStep, setGenerationStep] = useState(0)
   const [tripData, setTripData] = useState<TripWizardData>({
@@ -108,9 +160,16 @@ export default function TripWizardPage() {
     customRegion: '',
     customDuration: '',
     customDifficulty: '',
+    startingArea: '',
+    plannerNotes: '',
     coverImageUrl: '',
     mapQuery: '',
     preferences: {
+      familyFriendly: false,
+      kidsFriendly: false,
+      strollerFriendly: false,
+      dogFriendly: false,
+      romantic: false,
       waterFeatures: false,
       camping: false,
       viewpoints: false,
@@ -144,6 +203,7 @@ export default function TripWizardPage() {
   const previewRegion = resolvedRegion ? getRegionLabel(resolvedRegion, locale) : ''
   const previewDuration = resolvedDuration ? getDurationLabel(resolvedDuration, locale) : ''
   const previewDifficulty = resolvedDifficulty ? getDifficultyLabel(resolvedDifficulty, locale) : ''
+  const selectedPreferences = getEnabledPreferenceLabels(tripData.preferences, locale)
   const progress = STEPS.indexOf(step) + 1
 
   const generationMessages = useMemo(
@@ -165,9 +225,36 @@ export default function TripWizardPage() {
 
   useEffect(() => {
     if (!userLoading && !user) {
-      router.push(`/${locale}/auth/login`)
+      const sampleId = searchParams.get('sample')
+      router.push(sampleId ? `/${locale}/auth/login?sample=${sampleId}` : `/${locale}/auth/login`)
     }
-  }, [locale, router, user, userLoading])
+  }, [locale, router, searchParams, user, userLoading])
+
+  useEffect(() => {
+    const sample = getSampleTripSeed(searchParams.get('sample'))
+    if (!sample) return
+
+    setTripData((current) => ({
+      ...current,
+      title: sample.title[locale],
+      region: sample.region,
+      duration_type: sample.duration_type,
+      difficulty: sample.difficulty,
+      startingArea: sample.startingArea,
+      plannerNotes: sample.plannerNotes[locale],
+      coverImageUrl: sample.coverImageUrl,
+      mapQuery: sample.mapQuery,
+      preferences: {
+        ...current.preferences,
+        ...sample.preferences,
+        otherPreferences:
+          typeof sample.preferences.otherPreferences === 'string'
+            ? sample.preferences.otherPreferences
+            : current.preferences.otherPreferences,
+      },
+    }))
+    setSampleNotice(uiText.sampleLoaded)
+  }, [locale, searchParams, uiText.sampleLoaded])
 
   useEffect(() => {
     if (!isGenerating) return
@@ -215,11 +302,18 @@ export default function TripWizardPage() {
         region: resolvedRegion,
         duration_type: resolvedDuration,
         difficulty: resolvedDifficulty,
+        language_code: locale,
         preferences: tripData.preferences,
         itinerary: {
           cover_image_url: tripData.coverImageUrl.trim(),
           map_query: tripData.mapQuery.trim(),
           language: locale,
+          starting_area: tripData.startingArea.trim(),
+          planner_notes: tripData.plannerNotes.trim(),
+          route: {
+            map_query: tripData.mapQuery.trim(),
+            start: tripData.startingArea.trim(),
+          },
         },
       })
 
@@ -235,6 +329,8 @@ export default function TripWizardPage() {
           duration: resolvedDuration,
           difficulty: resolvedDifficulty,
           preferences: tripData.preferences,
+          startingArea: tripData.startingArea.trim(),
+          plannerNotes: tripData.plannerNotes.trim(),
           mapQuery: tripData.mapQuery.trim(),
           coverImageUrl: tripData.coverImageUrl.trim(),
           locale,
@@ -340,6 +436,13 @@ export default function TripWizardPage() {
                 </div>
               </div>
             </div>
+
+            {sampleNotice && (
+              <Card className="rounded-[1.5rem] border-primary/25 bg-primary/8 p-4 text-sm text-foreground">
+                <p>{sampleNotice}</p>
+                <p className="mt-1 text-muted-foreground">{uiText.sampleHint}</p>
+              </Card>
+            )}
 
             {error && (
               <Card className="rounded-[1.5rem] border-destructive/40 bg-destructive/8 p-4 text-sm text-destructive">
@@ -486,6 +589,28 @@ export default function TripWizardPage() {
                     placeholder={copy.otherPreferencesPlaceholder}
                     className="h-12 rounded-2xl"
                   />
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-foreground">{uiText.startingAreaLabel}</label>
+                      <Input
+                        value={tripData.startingArea}
+                        onChange={(event) => setTripData((current) => ({ ...current, startingArea: event.target.value }))}
+                        placeholder={uiText.startingAreaPlaceholder}
+                        className="h-12 rounded-2xl"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">{uiText.plannerNotesLabel}</label>
+                      <Textarea
+                        value={tripData.plannerNotes}
+                        onChange={(event) => setTripData((current) => ({ ...current, plannerNotes: event.target.value }))}
+                        placeholder={uiText.plannerNotesPlaceholder}
+                        className="min-h-28 rounded-[1.5rem]"
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -494,6 +619,7 @@ export default function TripWizardPage() {
                   <div>
                     <h2 className="text-2xl font-semibold text-foreground">{copy.reviewTitle}</h2>
                     <p className="mt-2 text-sm leading-6 text-muted-foreground">{copy.autoRedirect}</p>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">{uiText.reviewHint}</p>
                   </div>
 
                   <div className="grid gap-4 sm:grid-cols-2">
@@ -515,13 +641,31 @@ export default function TripWizardPage() {
                         className="h-12 rounded-2xl"
                       />
                     </div>
-                    <div className="sm:col-span-2">
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-foreground">{uiText.startingAreaLabel}</label>
+                      <Input
+                        value={tripData.startingArea}
+                        onChange={(event) => setTripData((current) => ({ ...current, startingArea: event.target.value }))}
+                        placeholder={uiText.startingAreaPlaceholder}
+                        className="h-12 rounded-2xl"
+                      />
+                    </div>
+                    <div>
                       <label className="mb-2 block text-sm font-medium text-foreground">{copy.imageUrl}</label>
                       <Input
                         value={tripData.coverImageUrl}
                         onChange={(event) => setTripData((current) => ({ ...current, coverImageUrl: event.target.value }))}
                         placeholder={uiText.imagePlaceholder}
                         className="h-12 rounded-2xl"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="mb-2 block text-sm font-medium text-foreground">{uiText.plannerNotesLabel}</label>
+                      <Textarea
+                        value={tripData.plannerNotes}
+                        onChange={(event) => setTripData((current) => ({ ...current, plannerNotes: event.target.value }))}
+                        placeholder={uiText.plannerNotesPlaceholder}
+                        className="min-h-28 rounded-[1.5rem]"
                       />
                     </div>
                   </div>
@@ -609,12 +753,31 @@ export default function TripWizardPage() {
                     <p className="text-sm text-muted-foreground">{copy.difficultyQuestion}</p>
                     <p className="mt-1 font-medium text-foreground">{previewDifficulty || uiText.selectDifficulty}</p>
                   </div>
+                  <div className="rounded-[1.25rem] border border-border/80 bg-muted/25 p-4 sm:col-span-2">
+                    <p className="text-sm text-muted-foreground">{uiText.startingAreaLabel}</p>
+                    <p className="mt-1 font-medium text-foreground">{tripData.startingArea || uiText.startingAreaPlaceholder}</p>
+                  </div>
                 </div>
 
-                {tripData.preferences.otherPreferences && (
+                <div className="rounded-[1.25rem] border border-border/80 bg-muted/25 p-4">
+                  <p className="text-sm text-muted-foreground">{uiText.selectedPreferences}</p>
+                  {selectedPreferences.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {selectedPreferences.map((label) => (
+                        <span key={label} className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-foreground">
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-sm text-muted-foreground">{uiText.noPreferencesYet}</p>
+                  )}
+                </div>
+
+                {(tripData.preferences.otherPreferences || tripData.plannerNotes) && (
                   <div className="rounded-[1.25rem] border border-border/80 bg-muted/25 p-4">
-                    <p className="text-sm text-muted-foreground">{copy.otherPreferences}</p>
-                    <p className="mt-1 font-medium text-foreground">{tripData.preferences.otherPreferences}</p>
+                    <p className="text-sm text-muted-foreground">{uiText.plannerNotesLabel}</p>
+                    <p className="mt-1 font-medium text-foreground">{tripData.preferences.otherPreferences || tripData.plannerNotes}</p>
                   </div>
                 )}
               </div>

@@ -7,12 +7,15 @@ import { siteCopy } from '@/lib/site-copy'
 
 interface SignUpSuccessProps {
   params: Promise<{ locale: string }>
+  searchParams?: Promise<{ sample?: string }>
 }
 
-export default async function SignUpSuccessPage({ params }: SignUpSuccessProps) {
+export default async function SignUpSuccessPage({ params, searchParams }: SignUpSuccessProps) {
   const resolvedParams = await params
+  const resolvedSearchParams = searchParams ? await searchParams : undefined
   const locale = resolveLocale(resolvedParams.locale) as Locale
   const copy = siteCopy[locale].auth
+  const sampleId = resolvedSearchParams?.sample
 
   return (
     <main className="app-shell flex min-h-screen items-center justify-center px-4 py-10 sm:px-6 lg:px-8">
@@ -26,7 +29,7 @@ export default async function SignUpSuccessPage({ params }: SignUpSuccessProps) 
         </CardHeader>
         <CardContent className="flex justify-center">
           <Button asChild className="rounded-full px-6">
-            <Link href={`/${locale}/auth/login`}>{copy.login}</Link>
+            <Link href={sampleId ? `/${locale}/auth/login?sample=${sampleId}` : `/${locale}/auth/login`}>{copy.login}</Link>
           </Button>
         </CardContent>
       </Card>

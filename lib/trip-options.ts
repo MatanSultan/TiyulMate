@@ -5,6 +5,11 @@ export const DURATIONS = ['1 day', '2-3 days', '4-7 days', 'multi-week']
 export const DIFFICULTIES = ['Easy', 'Moderate', 'Hard', 'Expert']
 
 export type PreferenceKey =
+  | 'familyFriendly'
+  | 'kidsFriendly'
+  | 'strollerFriendly'
+  | 'dogFriendly'
+  | 'romantic'
   | 'waterFeatures'
   | 'camping'
   | 'viewpoints'
@@ -15,8 +20,13 @@ export type PreferenceKey =
   | 'wheelchairFriendly'
   | 'lowMobilityFriendly'
 
-const preferenceLabels: Record<Locale, Record<string, string>> = {
+const preferenceLabels: Record<Locale, Record<PreferenceKey, string>> = {
   en: {
+    familyFriendly: 'Family-friendly pacing',
+    kidsFriendly: 'Kids-friendly stops',
+    strollerFriendly: 'Stroller-friendly routes',
+    dogFriendly: 'Dog-friendly planning',
+    romantic: 'Romantic atmosphere',
     waterFeatures: 'Water features',
     camping: 'Camping opportunities',
     viewpoints: 'Scenic viewpoints',
@@ -28,17 +38,27 @@ const preferenceLabels: Record<Locale, Record<string, string>> = {
     lowMobilityFriendly: 'Low-mobility friendly pacing',
   },
   he: {
+    familyFriendly: 'ידידותי למשפחות',
+    kidsFriendly: 'מתאים לילדים',
+    strollerFriendly: 'מתאים לעגלות',
+    dogFriendly: 'ידידותי לכלבים',
+    romantic: 'אווירה רומנטית',
     waterFeatures: 'מעיינות ומפלים',
     camping: 'אפשרויות קמפינג',
     viewpoints: 'תצפיות נוף',
-    archaeological: 'אתרים ארכיאולוגיים',
+    archaeological: 'אתרים ארכאולוגיים',
     wildflowers: 'פריחה וטבע',
     photography: 'נקודות צילום',
     accessibleRoutes: 'מסלולים נגישים',
-    wheelchairFriendly: 'אפשרויות ידידותיות לכיסא גלגלים',
+    wheelchairFriendly: 'ידידותי לכיסאות גלגלים',
     lowMobilityFriendly: 'קצב מותאם לניידות נמוכה',
   },
   ar: {
+    familyFriendly: 'مناسب للعائلات',
+    kidsFriendly: 'مناسب للأطفال',
+    strollerFriendly: 'مناسب للعربات',
+    dogFriendly: 'مناسب للكلاب',
+    romantic: 'أجواء رومانسية',
     waterFeatures: 'ينابيع وشلالات',
     camping: 'خيارات تخييم',
     viewpoints: 'نقاط مشاهدة',
@@ -135,8 +155,28 @@ function normalizeDifficultyValue(value: string) {
 }
 
 export function getPreferenceOptions(locale: Locale): Array<{ key: PreferenceKey; label: string }> {
-  const labels = preferenceLabels[locale]
-  return Object.entries(labels).map(([key, label]) => ({ key: key as PreferenceKey, label }))
+  return (Object.entries(preferenceLabels[locale]) as Array<[PreferenceKey, string]>).map(([key, label]) => ({
+    key,
+    label,
+  }))
+}
+
+export function getPreferenceLabel(key: string, locale: Locale) {
+  return preferenceLabels[locale][key as PreferenceKey] || key
+}
+
+export function getEnabledPreferenceLabels(
+  preferences: Record<string, unknown> | null | undefined,
+  locale: Locale,
+  limit?: number,
+) {
+  if (!preferences) return []
+
+  const enabled = Object.entries(preferences)
+    .filter(([key, value]) => key !== 'otherPreferences' && Boolean(value))
+    .map(([key]) => getPreferenceLabel(key, locale))
+
+  return typeof limit === 'number' ? enabled.slice(0, limit) : enabled
 }
 
 export function getRegionLabel(region: string, locale: Locale) {

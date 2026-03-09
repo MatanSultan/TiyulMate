@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { Suspense, useEffect } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import { ArrowRight, Clock3, MapPin, Plus, Sparkles } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { Header } from '@/components/header'
@@ -13,7 +13,7 @@ import { useTrips } from '@/hooks/use-trips'
 import { resolveLocale, t, type Locale } from '@/lib/i18n'
 import { tripCopy } from '@/lib/trip-copy'
 import { getTripCoverImage } from '@/lib/trip-model'
-import { getDifficultyLabel, getDurationLabel, getRegionLabel } from '@/lib/trip-options'
+import { getDifficultyLabel, getDurationLabel, getEnabledPreferenceLabels, getRegionLabel } from '@/lib/trip-options'
 
 export default function DashboardPage() {
   const { user, loading: userLoading } = useAuth()
@@ -22,6 +22,24 @@ export default function DashboardPage() {
   const params = useParams()
   const locale = resolveLocale(params.locale as string) as Locale
   const copy = tripCopy[locale].dashboard
+  const [activeFilter, setActiveFilter] = useState<'all' | 'accessible' | 'family' | 'dog'>('all')
+  const filterLabels = {
+    all: locale === 'he' ? 'הכול' : locale === 'ar' ? 'الكل' : 'All',
+    accessible: locale === 'he' ? 'נגיש' : locale === 'ar' ? 'مناسب للوصول' : 'Accessible',
+    family: locale === 'he' ? 'משפחתי' : locale === 'ar' ? 'عائلي' : 'Family',
+    dog: locale === 'he' ? 'ידידותי לכלבים' : locale === 'ar' ? 'مناسب للكلاب' : 'Dog-friendly',
+  }
+  const filteredTrips = useMemo(() => {
+    if (!trips) return []
+    if (activeFilter === 'all') return trips
+    if (activeFilter === 'accessible') {
+      return trips.filter((trip) => trip.preferences?.accessibleRoutes || trip.preferences?.wheelchairFriendly || trip.preferences?.lowMobilityFriendly)
+    }
+    if (activeFilter === 'family') {
+      return trips.filter((trip) => trip.preferences?.familyFriendly || trip.preferences?.kidsFriendly || trip.preferences?.strollerFriendly)
+    }
+    return trips.filter((trip) => trip.preferences?.dogFriendly)
+  }, [activeFilter, trips])
   const regionLabel = locale === 'he' ? 'אזור' : locale === 'ar' ? 'المنطقة' : 'Region'
   const durationLabel = locale === 'he' ? 'משך' : locale === 'ar' ? 'المدة' : 'Duration'
 
@@ -82,6 +100,20 @@ export default function DashboardPage() {
         )}
 
         <section className="mt-8">
+          <div className="mb-5 flex flex-wrap gap-2">
+            {(['all', 'accessible', 'family', 'dog'] as const).map((filter) => (
+              <Button
+                key={filter}
+                type="button"
+                variant={activeFilter === filter ? 'default' : 'outline'}
+                className="rounded-full"
+                onClick={() => setActiveFilter(filter)}
+              >
+                {filterLabels[filter]}
+              </Button>
+            ))}
+          </div>
+
           {tripsLoading ? (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {Array.from({ length: 3 }).map((_, index) => (
@@ -95,10 +127,11 @@ export default function DashboardPage() {
                 </Card>
               ))}
             </div>
-          ) : trips && trips.length > 0 ? (
+          ) : filteredTrips.length > 0 ? (
             <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-              {trips.map((trip, index) => {
+              {filteredTrips.map((trip, index) => {
                 const coverImage = getTripCoverImage(trip)
+                const preferenceBadges = getEnabledPreferenceLabels(trip.preferences, locale, 3)
 
                 return (
                   <Card
@@ -150,6 +183,16 @@ export default function DashboardPage() {
                         </div>
                       </div>
 
+                      {preferenceBadges.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {preferenceBadges.map((badge) => (
+                            <span key={badge} className="rounded-full bg-primary/8 px-3 py-1 text-xs font-medium text-foreground">
+                              {badge}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
                       <div className="flex gap-3">
                         <Button asChild className="flex-1 rounded-full">
                           <Link href={`/${locale}/dashboard/trip/${trip.id}`}>
@@ -166,6 +209,20 @@ export default function DashboardPage() {
                 )
               })}
             </div>
+          ) : trips && trips.length > 0 ? (
+            <Card className="rounded-[2rem] border-white/10 bg-card/78 p-10 text-center shadow-[0_30px_90px_-60px_rgba(15,23,42,0.55)]">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-primary/10 text-primary">
+                <Sparkles className="h-7 w-7" />
+              </div>
+              <h2 className="mt-6 text-2xl font-semibold text-foreground">{filterLabels[activeFilter]}</h2>
+              <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-muted-foreground">
+                {locale === 'he'
+                  ? 'אין כרגע טיולים שמתאימים לסינון הזה.'
+                  : locale === 'ar'
+                    ? 'لا توجد رحلات تطابق هذا الفلتر الآن.'
+                    : 'No trips match this filter yet.'}
+              </p>
+            </Card>
           ) : (
             <Card className="rounded-[2rem] border-white/10 bg-card/78 p-10 text-center shadow-[0_30px_90px_-60px_rgba(15,23,42,0.55)]">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-primary/10 text-primary">

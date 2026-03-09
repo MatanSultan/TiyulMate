@@ -4,6 +4,7 @@ import { defaultLocale, locales } from '@/lib/i18n'
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
+  const isPublicSharedRoute = pathname === '/shared' || pathname.startsWith('/shared/')
 
   const pathnameHasLocale = locales.some(
     (locale) => pathname.startsWith(`/${locale}/`) || pathname === `/${locale}`,
@@ -17,6 +18,7 @@ export async function proxy(request: NextRequest) {
   }
 
   if (
+    !isPublicSharedRoute &&
     !pathname.startsWith('/_next/') &&
     !pathname.startsWith('/api/') &&
     !pathname.includes('.')

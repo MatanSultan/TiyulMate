@@ -159,3 +159,18 @@ export async function deleteTrip(id: string) {
   const { error } = await supabase.from('trips').delete().eq('id', id)
   if (error) throw error
 }
+
+export async function duplicateTrip(trip: Trip, title?: string) {
+  return createTrip({
+    title: title || `${trip.title} (Copy)`,
+    region: trip.region,
+    duration_type: trip.duration_type,
+    difficulty: trip.difficulty,
+    language_code: trip.language_code,
+    preferences: trip.preferences,
+    itinerary: {
+      ...trip.itinerary,
+    },
+    updated_at: trip.updated_at,
+  })
+}

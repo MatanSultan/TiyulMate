@@ -1,20 +1,65 @@
 'use client'
 
 import Image from 'next/image'
+import { ExternalLink, MapPin, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { getGoogleMapsUrl, getTripCoverImage, getTripMapQuery, normalizeDayEntries, stringifyUnknown, type TripRecord } from '@/lib/trip-model'
 import { type Locale } from '@/lib/i18n'
 import { tripCopy } from '@/lib/trip-copy'
-import { ExternalLink, MapPin, Sparkles } from 'lucide-react'
+import {
+  getGoogleMapsUrl,
+  getTripCoverImage,
+  getTripMapQuery,
+  normalizeDayEntries,
+  normalizeStringArray,
+  stringifyUnknown,
+  type TripRecord,
+} from '@/lib/trip-model'
+import { getEnabledPreferenceLabels } from '@/lib/trip-options'
+
+function renderList(values: string[]) {
+  return (
+    <ul className="space-y-3">
+      {values.map((value) => (
+        <li key={value} className="flex gap-3 text-sm leading-7 text-foreground/88">
+          <span className="mt-2 h-2 w-2 rounded-full bg-primary" />
+          <span>{value}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
 
 export function TripItinerary({ trip, locale }: { trip: TripRecord; locale: Locale }) {
   const copy = tripCopy[locale].detail
+  const labels = {
+    bestTime: locale === 'he' ? 'הזמן המומלץ' : locale === 'ar' ? 'أفضل وقت' : 'Best time',
+    start: locale === 'he' ? 'יציאה' : locale === 'ar' ? 'الانطلاق' : 'Start',
+    weather: locale === 'he' ? 'מזג אוויר' : locale === 'ar' ? 'الطقس' : 'Weather',
+    tags: locale === 'he' ? 'תגיות' : locale === 'ar' ? 'الوسوم' : 'Tags',
+    checklist: locale === 'he' ? 'צ׳קליסט' : locale === 'ar' ? 'قائمة تجهيزات' : 'Checklist',
+    accessibility: locale === 'he' ? 'נגישות' : locale === 'ar' ? 'إمكانية الوصول' : 'Accessibility',
+    practicalNotes: locale === 'he' ? 'הערות פרקטיות' : locale === 'ar' ? 'ملاحظات عملية' : 'Practical notes',
+  }
   const itinerary = trip.itinerary || {}
   const days = normalizeDayEntries(itinerary, locale)
   const coverImage = getTripCoverImage(trip)
   const mapQuery = getTripMapQuery(itinerary)
-  const hasItinerary = days.length > 0 || Boolean(itinerary.overview || itinerary.hiking_tips)
+  const checklist = normalizeStringArray(itinerary.checklist)
+  const accessibilityNotes = normalizeStringArray(itinerary.accessibility_notes)
+  const practicalNotes = normalizeStringArray(itinerary.practical_notes)
+  const hikingTips = normalizeStringArray(itinerary.hiking_tips)
+  const tags = normalizeStringArray(itinerary.tags)
+  const preferenceBadges = getEnabledPreferenceLabels(trip.preferences, locale, 8)
+  const hasItinerary =
+    days.length > 0 ||
+    Boolean(
+      itinerary.overview ||
+        itinerary.hiking_tips ||
+        itinerary.best_time ||
+        itinerary.who_its_for ||
+        itinerary.weather_note,
+    )
 
   if (!hasItinerary) {
     return null
@@ -42,11 +87,50 @@ export function TripItinerary({ trip, locale }: { trip: TripRecord; locale: Loca
         </div>
       )}
 
-      {itinerary.overview && (
+      {preferenceBadges.length > 0 && (
+        <Card className="rounded-[1.75rem] border-white/10 bg-card/80 p-6">
+          <div className="flex flex-wrap gap-2">
+            {preferenceBadges.map((badge) => (
+              <span key={badge} className="rounded-full border border-primary/15 bg-primary/8 px-3 py-1 text-xs font-medium text-foreground">
+                {badge}
+              </span>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {(itinerary.overview || itinerary.vibe || itinerary.who_its_for) && (
         <Card className="rounded-[1.75rem] border-white/10 bg-card/80 p-6 shadow-[0_24px_80px_-48px_rgba(15,23,42,0.55)]">
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.28em] text-primary/70">{copy.overview}</p>
-          <p className="text-base leading-8 text-foreground/88">{stringifyUnknown(itinerary.overview)}</p>
+          {itinerary.overview && <p className="text-base leading-8 text-foreground/88">{stringifyUnknown(itinerary.overview)}</p>}
+          {itinerary.vibe && <p className="mt-4 text-sm leading-7 text-muted-foreground">{stringifyUnknown(itinerary.vibe)}</p>}
+          {itinerary.who_its_for && (
+            <p className="mt-4 text-sm font-medium text-foreground">{stringifyUnknown(itinerary.who_its_for)}</p>
+          )}
         </Card>
+      )}
+
+      {(itinerary.best_time || itinerary.weather_note || itinerary.starting_area) && (
+        <div className="grid gap-4 lg:grid-cols-3">
+          {itinerary.best_time && (
+            <Card className="rounded-[1.5rem] border-white/10 bg-card/80 p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">{labels.bestTime}</p>
+              <p className="mt-3 text-sm leading-7 text-foreground/88">{stringifyUnknown(itinerary.best_time)}</p>
+            </Card>
+          )}
+          {itinerary.starting_area && (
+            <Card className="rounded-[1.5rem] border-white/10 bg-card/80 p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">{labels.start}</p>
+              <p className="mt-3 text-sm leading-7 text-foreground/88">{stringifyUnknown(itinerary.starting_area)}</p>
+            </Card>
+          )}
+          {itinerary.weather_note && (
+            <Card className="rounded-[1.5rem] border-white/10 bg-card/80 p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">{labels.weather}</p>
+              <p className="mt-3 text-sm leading-7 text-foreground/88">{stringifyUnknown(itinerary.weather_note)}</p>
+            </Card>
+          )}
+        </div>
       )}
 
       {mapQuery && (
@@ -58,6 +142,12 @@ export function TripItinerary({ trip, locale }: { trip: TripRecord; locale: Loca
                 <MapPin className="h-4 w-4 text-primary" />
                 <span>{mapQuery}</span>
               </div>
+              {itinerary.route?.start && (
+                <p className="text-sm text-muted-foreground">
+                  {stringifyUnknown(itinerary.route.start)}
+                  {itinerary.route?.end ? ` -> ${stringifyUnknown(itinerary.route.end)}` : ''}
+                </p>
+              )}
             </div>
             <Button asChild variant="outline" className="rounded-full">
               <a href={getGoogleMapsUrl(mapQuery)} target="_blank" rel="noreferrer">
@@ -67,6 +157,51 @@ export function TripItinerary({ trip, locale }: { trip: TripRecord; locale: Loca
             </Button>
           </div>
         </Card>
+      )}
+
+      {(tags.length > 0 || checklist.length > 0 || accessibilityNotes.length > 0 || practicalNotes.length > 0 || hikingTips.length > 0) && (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {tags.length > 0 && (
+            <Card className="rounded-[1.75rem] border-white/10 bg-card/80 p-6">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.28em] text-primary/70">{labels.tags}</p>
+              <div className="flex flex-wrap gap-2">
+                {tags.map((tag) => (
+                  <span key={tag} className="rounded-full bg-muted/60 px-3 py-1 text-xs font-medium text-foreground/85">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {checklist.length > 0 && (
+            <Card className="rounded-[1.75rem] border-white/10 bg-card/80 p-6">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.28em] text-primary/70">{labels.checklist}</p>
+              {renderList(checklist)}
+            </Card>
+          )}
+
+          {accessibilityNotes.length > 0 && (
+            <Card className="rounded-[1.75rem] border-white/10 bg-card/80 p-6">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.28em] text-primary/70">{labels.accessibility}</p>
+              {renderList(accessibilityNotes)}
+            </Card>
+          )}
+
+          {practicalNotes.length > 0 && (
+            <Card className="rounded-[1.75rem] border-white/10 bg-card/80 p-6">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.28em] text-primary/70">{labels.practicalNotes}</p>
+              {renderList(practicalNotes)}
+            </Card>
+          )}
+
+          {hikingTips.length > 0 && (
+            <Card className="rounded-[1.75rem] border-white/10 bg-primary/5 p-6 xl:col-span-2">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.28em] text-primary/70">{copy.tips}</p>
+              {renderList(hikingTips)}
+            </Card>
+          )}
+        </div>
       )}
 
       {days.length > 0 && (
@@ -80,36 +215,21 @@ export function TripItinerary({ trip, locale }: { trip: TripRecord; locale: Loca
                   </p>
                   <h3 className="text-xl font-semibold text-foreground">{day.label}</h3>
                 </div>
-                {(day.data.distance || day.data.hiking_time) && (
+                {(day.data.distance || day.data.hiking_time || day.data.drive_time) && (
                   <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                     {day.data.distance && <span className="rounded-full bg-primary/8 px-3 py-1">{day.data.distance}</span>}
                     {day.data.hiking_time && <span className="rounded-full bg-primary/8 px-3 py-1">{day.data.hiking_time}</span>}
+                    {day.data.drive_time && <span className="rounded-full bg-primary/8 px-3 py-1">{day.data.drive_time}</span>}
                   </div>
                 )}
               </div>
 
               {day.summary && <p className="mb-4 text-sm leading-7 text-muted-foreground">{day.summary}</p>}
 
-              {day.bullets.length > 0 && (
-                <ul className="space-y-3">
-                  {day.bullets.map((bullet, bulletIndex) => (
-                    <li key={`${day.key}-${bulletIndex}`} className="flex gap-3 text-sm leading-7 text-foreground/88">
-                      <span className="mt-2 h-2 w-2 rounded-full bg-primary" />
-                      <span>{bullet}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              {day.bullets.length > 0 && renderList(day.bullets)}
             </Card>
           ))}
         </div>
-      )}
-
-      {itinerary.hiking_tips && (
-        <Card className="rounded-[1.75rem] border-white/10 bg-primary/5 p-6">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.28em] text-primary/70">{copy.tips}</p>
-          <p className="text-sm leading-7 text-foreground/88">{stringifyUnknown(itinerary.hiking_tips)}</p>
-        </Card>
       )}
     </div>
   )

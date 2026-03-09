@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 import { Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -20,8 +20,17 @@ export default function SignUpPage() {
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
   const params = useParams()
+  const searchParams = useSearchParams()
   const locale = resolveLocale(params.locale as string) as Locale
   const copy = siteCopy[locale].auth
+  const sampleId = searchParams.get('sample')
+
+  const signUpErrorText =
+    locale === 'he'
+      ? 'לא הצלחנו ליצור חשבון כרגע. בדוק שהאימייל תקין ונסה שוב.'
+      : locale === 'ar'
+        ? 'تعذر إنشاء الحساب الآن. تحقق من صحة البريد الإلكتروني وحاول مرة أخرى.'
+        : 'We could not create your account right now. Check your email address and try again.'
 
   const handleSignUp = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -40,14 +49,14 @@ export default function SignUpPage() {
         email,
         password,
         options: {
-          emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || window.location.origin}/${locale}/auth/login`,
+          emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || window.location.origin}/${locale}/auth/login${sampleId ? `?sample=${sampleId}` : ''}`,
         },
       })
 
       if (signUpError) throw signUpError
-      router.push(`/${locale}/auth/sign-up-success`)
+      router.push(sampleId ? `/${locale}/auth/sign-up-success?sample=${sampleId}` : `/${locale}/auth/sign-up-success`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy.confirmEmail)
+      setError(err instanceof Error ? signUpErrorText : copy.confirmEmail)
     } finally {
       setIsLoading(false)
     }
@@ -72,6 +81,12 @@ export default function SignUpPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSignUp} className="space-y-5">
+              {sampleId && (
+                <div className="rounded-[1.25rem] border border-primary/25 bg-primary/8 p-3 text-sm text-foreground">
+                  {copy.sampleNotice}
+                </div>
+              )}
+
               <div className="grid gap-2">
                 <Label htmlFor="email">{copy.email}</Label>
                 <Input
@@ -120,7 +135,7 @@ export default function SignUpPage() {
 
               <p className="text-center text-sm text-muted-foreground">
                 {copy.haveAccount}{' '}
-                <Link href={`/${locale}/auth/login`} className="font-semibold text-primary hover:underline">
+                <Link href={sampleId ? `/${locale}/auth/login?sample=${sampleId}` : `/${locale}/auth/login`} className="font-semibold text-primary hover:underline">
                   {copy.login}
                 </Link>
               </p>

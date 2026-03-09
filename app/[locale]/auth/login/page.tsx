@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 import { Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -19,8 +19,17 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
   const params = useParams()
+  const searchParams = useSearchParams()
   const locale = resolveLocale(params.locale as string) as Locale
   const copy = siteCopy[locale].auth
+  const sampleId = searchParams.get('sample')
+
+  const authErrorText =
+    locale === 'he'
+      ? 'פרטי ההתחברות שגויים או שעדיין לא אישרת את כתובת האימייל.'
+      : locale === 'ar'
+        ? 'بيانات تسجيل الدخول غير صحيحة أو أن البريد الإلكتروني لم يتم تأكيده بعد.'
+        : 'Your login details are incorrect or your email is not confirmed yet.'
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -35,9 +44,9 @@ export default function LoginPage() {
       })
 
       if (signInError) throw signInError
-      router.push(`/${locale}/dashboard`)
+      router.push(sampleId ? `/${locale}/dashboard/trip-wizard?sample=${sampleId}` : `/${locale}/dashboard`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy.confirmEmail)
+      setError(err instanceof Error ? authErrorText : copy.confirmEmail)
     } finally {
       setIsLoading(false)
     }
@@ -62,6 +71,12 @@ export default function LoginPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-5">
+              {sampleId && (
+                <div className="rounded-[1.25rem] border border-primary/25 bg-primary/8 p-3 text-sm text-foreground">
+                  {copy.sampleNotice}
+                </div>
+              )}
+
               <div className="grid gap-2">
                 <Label htmlFor="email">{copy.email}</Label>
                 <Input
@@ -98,7 +113,7 @@ export default function LoginPage() {
 
               <p className="text-center text-sm text-muted-foreground">
                 {copy.noAccount}{' '}
-                <Link href={`/${locale}/auth/sign-up`} className="font-semibold text-primary hover:underline">
+                <Link href={sampleId ? `/${locale}/auth/sign-up?sample=${sampleId}` : `/${locale}/auth/sign-up`} className="font-semibold text-primary hover:underline">
                   {copy.signUp}
                 </Link>
               </p>

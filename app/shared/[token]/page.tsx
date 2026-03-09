@@ -8,6 +8,7 @@ import { TripItinerary } from '@/components/trip-itinerary'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { resolveLocale, t, type Locale } from '@/lib/i18n'
+import { siteCopy } from '@/lib/site-copy'
 import { createClient } from '@/lib/supabase/client'
 import type { TripRecord } from '@/lib/trip-model'
 
@@ -41,6 +42,7 @@ export default function SharedTripPage({ params }: { params: { token: string } }
   const pageLocale = resolveLocale(
     trip?.language_code || (typeof trip?.itinerary?.language === 'string' ? trip.itinerary.language : undefined),
   )
+  const copy = siteCopy[pageLocale].publicShare
   const uiText = useMemo(() => buildUiText(pageLocale), [pageLocale])
 
   useEffect(() => {
@@ -85,9 +87,9 @@ export default function SharedTripPage({ params }: { params: { token: string } }
         <main className="mx-auto max-w-5xl px-4 py-16 sm:px-6 lg:px-8">
           <Card className="rounded-[2rem] border-destructive/40 bg-destructive/8 p-8 text-center">
             <AlertCircle className="mx-auto h-12 w-12 text-destructive" />
-            <p className="mt-4 text-lg font-semibold text-foreground">{error || uiText.notFound}</p>
+            <p className="mt-4 text-lg font-semibold text-foreground">{error || copy.notFound}</p>
             <Button asChild variant="outline" className="mt-6 rounded-full">
-              <Link href={`/${pageLocale}`}>{uiText.backHome}</Link>
+              <Link href={`/${pageLocale}`}>{copy.backHome}</Link>
             </Button>
           </Card>
         </main>
@@ -101,16 +103,16 @@ export default function SharedTripPage({ params }: { params: { token: string } }
       <main className="app-shell mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
         <section className="rounded-[2rem] border border-white/10 bg-card/82 p-6 shadow-[0_40px_120px_-64px_rgba(15,23,42,0.58)] sm:p-8">
           <div className="mb-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary/70">{uiText.sharedTrip}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary/70">{copy.sharedTrip}</p>
             <h1 className="mt-3 text-4xl font-semibold tracking-tight text-foreground">{trip.title}</h1>
           </div>
           <TripItinerary trip={trip} locale={pageLocale} />
         </section>
 
         <Card className="mt-6 rounded-[1.75rem] border-white/10 bg-primary/6 p-6 text-sm leading-7 text-foreground/85">
-          {uiText.ctaBody}{' '}
+          {copy.ctaBody}{' '}
           <Link href={`/${pageLocale}/auth/sign-up`} className="font-semibold text-primary hover:underline">
-            {uiText.ctaLink}
+            {copy.ctaLink}
           </Link>
           .
         </Card>

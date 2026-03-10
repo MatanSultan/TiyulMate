@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useAuth } from '@/hooks/use-auth'
 import { createTrip, useTrips } from '@/hooks/use-trips'
 import { resolveLocale, t, type Locale } from '@/lib/i18n'
-import { getSampleTripSeed } from '@/lib/sample-trips'
+import { getSampleTripSeed } from '@/lib/sample-catalog'
 import { tripCopy } from '@/lib/trip-copy'
 import { type TripPreferences } from '@/lib/trip-model'
 import {

@@ -3,6 +3,7 @@ import { groq } from '@ai-sdk/groq'
 import { resolveLocale, type Locale } from '@/lib/i18n'
 import { normalizeStringArray } from '@/lib/trip-model'
 import { createClient } from '@/lib/supabase/server'
+import { validateItinerary, getDayCountFromDuration } from '@/lib/itinerary-schema'
 
 function getLanguageInstruction(locale: Locale) {
   if (locale === 'he') return 'Hebrew'
@@ -14,9 +15,125 @@ function getLocalizedMessage(locale: Locale, messages: Record<Locale, string>) {
   return messages[locale]
 }
 
-function extractJson(text: string) {
-  const match = text.match(/\{[\s\S]*\}/)
+/**
+ * Extracts valid JSON from text with robust error handling.
+ * Handles cases where the model generates incomplete or malformed JSON.
+ */
+function extractJson(text: string): string {
+  const trimmed = text.trim()
+
+  // If text starts with { and ends with }, try to use it directly
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    return trimmed
+  }
+
+  // Try to find balanced JSON object
+  let braceCount = 0
+  let jsonEnd = -1
+
+  for (let i = 0; i < trimmed.length; i++) {
+    if (trimmed[i] === '{') braceCount++
+    else if (trimmed[i] === '}') braceCount--
+
+    if (braceCount === 0 && trimmed[i] === '}') {
+      jsonEnd = i
+      break
+    }
+  }
+
+  if (jsonEnd > -1) {
+    return trimmed.substring(0, jsonEnd + 1)
+  }
+
+  // Fallback to greedy match
+  const match = trimmed.match(/\{[\s\S]*\}/)
   return match ? match[0] : text
+}
+
+/**
+ * Attempts to generate a valid itinerary with retry logic.
+ * Will retry up to 2 times with stricter instructions if validation fails.
+ */
+async function generateValidItinerary(
+  prompt: string,
+  expectedDayCount: number,
+  selectedLocale: Locale,
+  maxRetries = 2,
+): Promise<
+  | { success: true; itinerary: Record<string, unknown> }
+  | { success: false; error: string }
+> {
+  let lastError = ''
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      let currentPrompt = prompt
+
+      // Make subsequent prompts stricter
+      if (attempt > 0) {
+        const strictSuffix = `\n\nIMPORTANT - ATTEMPT ${attempt + 1}: STRICT REQUIREMENTS:
+1. You MUST include exactly day_1, day_2, ..., day_${expectedDayCount} (all ${expectedDayCount} days).
+2. Do NOT skip any days.
+3. Do NOT add extra unnumbered days.
+4. Each day MUST have at minimum: title, summary, activities array.
+5. Return ONLY valid JSON. No markdown. No code blocks. No explanations.
+6. Start with { and end with }
+7. If you cannot generate ${expectedDayCount} days, still try to generate as many as possible starting from day_1.`
+        currentPrompt = prompt + strictSuffix
+      }
+
+      const result = await generateText({
+        model: groq('llama-3.3-70b-versatile'),
+        prompt: currentPrompt,
+        temperature: attempt === 0 ? 0.6 : 0.3, // Lower temp for retries
+        maxOutputTokens: 2600,
+      })
+
+      const text = result.text
+      const jsonStr = extractJson(text)
+      const itinerary = JSON.parse(jsonStr)
+
+      // Validate against schema
+      const validation = validateItinerary(itinerary, expectedDayCount)
+
+      if (validation.valid) {
+        return { success: true, itinerary }
+      }
+
+      lastError = validation.errors.join('; ')
+
+      // If this is the last attempt, we still return what we got with a warning
+      if (attempt === maxRetries) {
+        console.warn(
+          `[Itinerary Generation] Max retries reached. Validation errors: ${lastError}. Proceeding with partial itinerary.`,
+        )
+        // Return the itinerary even if not fully valid
+        return { success: true, itinerary }
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error)
+
+      if (attempt === maxRetries) {
+        return {
+          success: false,
+          error: getLocalizedMessage(selectedLocale, {
+            en: `Failed to generate valid itinerary after ${maxRetries + 1} attempts: ${lastError}`,
+            he: `נכשל ליצור מסלול תקין לאחר ${maxRetries + 1} ניסיונות: ${lastError}`,
+            ar: `فشل في إنشاء مسار صحيح بعد ${maxRetries + 1} محاولات: ${lastError}`,
+          }),
+        }
+      }
+    }
+  }
+
+  return {
+    success: false,
+    error: getLocalizedMessage(selectedLocale, {
+      en: `Itinerary generation failed: ${lastError}`,
+      he: `יצירת המסלול נכשלה: ${lastError}`,
+      ar: `فشل إنشاء المسار: ${lastError}`,
+    }),
+  }
 }
 
 export async function generateTripItinerary(payload: {
@@ -79,9 +196,12 @@ export async function generateTripItinerary(payload: {
     .map(([key]) => key)
     .join(', ')
 
-  const prompt = `You are TiyulMate, a premium AI trip planner for Israel.
+  // Extract expected day count from duration
+  const expectedDayCount = getDayCountFromDuration(duration)
 
-Create a polished and truly personalized itinerary for this trip.
+  const basePrompt = `You are TiyulMate, a premium AI trip planner for Israel.
+
+Create a polished and truly personalized itinerary for this trip with EXACTLY ${expectedDayCount} days.
 Trip title: ${title || 'Untitled trip'}
 Region: ${region}
 Duration: ${duration}
@@ -93,6 +213,8 @@ Planner notes from the user: ${plannerNotes || 'None provided'}
 Preferred map context: ${mapQuery || 'No map hint provided'}
 Cover image context: ${coverImageUrl || 'No image URL provided'}
 Output language: ${language}
+
+CRITICAL: You MUST include day_1, day_2, ..., day_${expectedDayCount} (${expectedDayCount} days total).
 
 Return valid JSON only with this structure:
 {
@@ -129,6 +251,9 @@ Return valid JSON only with this structure:
     "elevation_gain": "Localized elevation string",
     "map_query": "Google Maps query for this day"
   },
+  "day_2": { ...similar structure... },
+  ...
+  "day_${expectedDayCount}": { ...similar structure... },
   "estimated_distance": "Localized total distance",
   "estimated_elevation_gain": "Localized total elevation gain",
   "hiking_tips": ["Localized tip", "Localized tip", "Localized tip"]
@@ -143,46 +268,24 @@ Rules:
 - If family, kids, stroller, dog-friendly, or romantic preferences are selected, reflect them in the tone, stop choices, and practical notes.
 - Make the output feel premium, specific, and helpful rather than generic.
 - Include route-friendly map queries.
-- Do not wrap the JSON in markdown.`
+- Do NOT wrap the JSON in markdown or code blocks.
+- Return only the JSON object, nothing else.`
 
-  let text = ''
-  try {
-    const result = await generateText({
-      model: groq('llama-3.3-70b-versatile'),
-      prompt,
-      temperature: 0.6,
-      maxOutputTokens: 2600,
-    })
-    text = result.text
-  } catch (error) {
+  // Generate with retry logic
+  const generationResult = await generateValidItinerary(basePrompt, expectedDayCount, selectedLocale, 2)
+
+  if (!generationResult.success) {
     return Response.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : getLocalizedMessage(selectedLocale, {
-                en: 'AI service failed',
-                he: 'שירות ה-AI נכשל',
-                ar: 'فشلت خدمة الذكاء الاصطناعي',
-              }),
+        error: generationResult.error,
       },
       { status: 502 },
     )
   }
 
-  let itinerary: Record<string, unknown>
-  try {
-    itinerary = JSON.parse(extractJson(text))
-  } catch {
-    itinerary = {
-      overview: text,
-      day_1: {
-        title: selectedLocale === 'he' ? 'יום 1' : selectedLocale === 'ar' ? 'اليوم 1' : 'Day 1',
-        summary: text,
-      },
-    }
-  }
+  let itinerary = generationResult.itinerary
 
+  // Normalize string arrays to proper arrays
   itinerary = {
     ...itinerary,
     checklist: normalizeStringArray(itinerary.checklist),

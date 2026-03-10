@@ -1,22 +1,37 @@
-import Link from 'next/link'
-import { ArrowRight, Bot, Compass, Globe2, MapPinned, ShieldCheck, Star, SunMedium } from 'lucide-react'
+import type { Metadata } from 'next'
+import { Bot, Compass, Globe2, MapPinned, ShieldCheck, Star, SunMedium } from 'lucide-react'
 import { Header } from '@/components/header'
+import { LandingActions } from '@/components/landing-actions'
 import { LogoMark } from '@/components/logo-mark'
 import { ReadyMadeTrips } from '@/components/ready-made-trips'
-import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { brandCopy } from '@/lib/brand-copy'
 import { resolveLocale, type Locale } from '@/lib/i18n'
-import { siteCopy } from '@/lib/site-copy'
+import { marketingCopy } from '@/lib/marketing-copy'
 
 interface HomePageProps {
   params: Promise<{ locale: string }>
 }
 
+export async function generateMetadata({ params }: HomePageProps): Promise<Metadata> {
+  const resolvedParams = await params
+  const locale = resolveLocale(resolvedParams.locale) as Locale
+  const copy = marketingCopy[locale].landing
+
+  return {
+    title: `TiyulMate | ${copy.heroTitle}`,
+    description: copy.heroBody,
+    openGraph: {
+      title: 'TiyulMate',
+      description: copy.heroBody,
+    },
+  }
+}
+
 export default async function HomePage({ params }: HomePageProps) {
   const resolvedParams = await params
   const locale = resolveLocale(resolvedParams.locale) as Locale
-  const copy = siteCopy[locale].landing
+  const copy = marketingCopy[locale].landing
   const brand = brandCopy[locale]
 
   const featureCards = [
@@ -42,7 +57,7 @@ export default async function HomePage({ params }: HomePageProps) {
       <Header locale={locale} />
 
       <main className="app-shell">
-        <section className="px-4 pb-12 pt-10 sm:px-6 lg:px-8">
+        <section className="px-4 pb-10 pt-10 sm:px-6 lg:px-8">
           <div className="mx-auto grid max-w-7xl gap-8 xl:grid-cols-[1.04fr_0.96fr]">
             <div className="travel-panel animate-float-up rounded-[2.5rem] p-8 sm:p-10">
               <div className="travel-kicker">
@@ -56,15 +71,7 @@ export default async function HomePage({ params }: HomePageProps) {
               <p className="mt-5 max-w-2xl text-lg leading-8 text-muted-foreground">{copy.heroBody}</p>
 
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                <Button asChild size="lg" className="rounded-full px-6">
-                  <Link href={`/${locale}/auth/sign-up`}>
-                    {copy.heroPrimaryCta}
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                </Button>
-                <Button asChild size="lg" variant="outline" className="rounded-full px-6">
-                  <Link href="#sample-trips">{copy.heroSecondaryCta}</Link>
-                </Button>
+                <LandingActions locale={locale} browseLabel={copy.heroPrimaryCta} accountLabel={copy.heroSecondaryCta} />
               </div>
 
               <p className="mt-6 max-w-2xl text-sm leading-7 text-muted-foreground">{copy.heroTrust}</p>
@@ -128,15 +135,8 @@ export default async function HomePage({ params }: HomePageProps) {
                       </div>
 
                       <div className="travel-card-dark rounded-[1.8rem] p-5">
-                        <div className="flex items-center justify-between gap-4">
-                          <div>
-                            <p className="text-sm font-semibold text-white/90">{copy.readyMadeTitle}</p>
-                            <p className="mt-1 text-xs leading-6 text-white/72">{copy.readyMadeBody}</p>
-                          </div>
-                          <div className="rounded-full bg-white/10 px-3 py-1 text-xs text-white/82">
-                            {copy.readyMadeUseBase}
-                          </div>
-                        </div>
+                        <p className="text-sm font-semibold text-white/90">{copy.readyMadeTitle}</p>
+                        <p className="mt-2 text-xs leading-6 text-white/72">{copy.readyMadeBody}</p>
                       </div>
 
                       <div className="travel-card rounded-[1.6rem] p-5">
@@ -174,6 +174,59 @@ export default async function HomePage({ params }: HomePageProps) {
                 ))}
               </div>
             </div>
+          </div>
+        </section>
+
+        <section className="px-4 py-6 sm:px-6 lg:px-8">
+          <div className="mx-auto grid max-w-7xl gap-3 md:grid-cols-4">
+            {copy.trustBar.map((item) => (
+              <Card key={item} className="travel-card-soft rounded-[1.5rem] p-4 text-center text-sm font-medium text-foreground/86">
+                {item}
+              </Card>
+            ))}
+          </div>
+        </section>
+
+        <section className="px-4 py-10 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-7xl">
+            <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="travel-kicker">
+                  <Compass className="h-3.5 w-3.5" />
+                  {copy.stepsTitle}
+                </p>
+                <h2 className="brand-display mt-4 text-balance text-4xl text-foreground">{copy.stepsTitle}</h2>
+              </div>
+              <p className="max-w-2xl text-sm leading-7 text-muted-foreground">{copy.stepsBody}</p>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-3">
+              {copy.steps.map((step, index) => (
+                <Card key={step.title} className="travel-card rounded-[1.9rem] p-6">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-lg font-semibold text-primary">
+                    {index + 1}
+                  </span>
+                  <h3 className="mt-5 text-xl font-semibold tracking-tight text-foreground">{step.title}</h3>
+                  <p className="mt-3 text-sm leading-7 text-muted-foreground">{step.body}</p>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section id="sample-trips" className="px-4 py-8 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-7xl">
+            <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="travel-kicker">
+                  <LogoMark className="h-4 w-4" />
+                  {copy.readyMadeEyebrow}
+                </p>
+                <h2 className="brand-display mt-4 text-balance text-4xl text-foreground">{copy.readyMadeTitle}</h2>
+              </div>
+              <p className="max-w-2xl text-sm leading-7 text-muted-foreground">{copy.readyMadeBody}</p>
+            </div>
+            <ReadyMadeTrips locale={locale} />
           </div>
         </section>
 
@@ -259,22 +312,6 @@ export default async function HomePage({ params }: HomePageProps) {
           </div>
         </section>
 
-        <section id="sample-trips" className="px-4 py-8 sm:px-6 lg:px-8">
-          <div className="mx-auto max-w-7xl">
-            <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <p className="travel-kicker">
-                  <LogoMark className="h-4 w-4" />
-                  {copy.readyMadeEyebrow}
-                </p>
-                <h2 className="brand-display mt-4 text-balance text-4xl text-foreground">{copy.readyMadeTitle}</h2>
-              </div>
-              <p className="max-w-2xl text-sm leading-7 text-muted-foreground">{copy.readyMadeBody}</p>
-            </div>
-            <ReadyMadeTrips locale={locale} />
-          </div>
-        </section>
-
         <section className="px-4 pb-16 pt-8 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-6xl rounded-[2.4rem] travel-panel p-8 sm:p-10">
             <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
@@ -288,15 +325,12 @@ export default async function HomePage({ params }: HomePageProps) {
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row">
-                <Button asChild size="lg" className="rounded-full px-6">
-                  <Link href={`/${locale}/auth/sign-up`}>
-                    {copy.finalPrimaryCta}
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                </Button>
-                <Button asChild size="lg" variant="outline" className="rounded-full px-6">
-                  <Link href="#sample-trips">{copy.finalSecondaryCta}</Link>
-                </Button>
+                <LandingActions
+                  locale={locale}
+                  browseLabel={copy.finalSecondaryCta}
+                  accountLabel={copy.finalPrimaryCta}
+                  finalPrimary
+                />
               </div>
             </div>
           </div>

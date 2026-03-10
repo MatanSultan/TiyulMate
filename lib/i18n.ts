@@ -32,7 +32,7 @@ const translations = {
   },
   he: {
     'nav.home': 'בית',
-    'nav.dashboard': 'לוח בקרה',
+    'nav.dashboard': 'לוח הבקרה',
     'nav.login': 'התחברות',
     'nav.signup': 'יצירת חשבון',
     'nav.logout': 'התנתקות',
@@ -46,7 +46,7 @@ const translations = {
   },
   ar: {
     'nav.home': 'الرئيسية',
-    'nav.dashboard': 'لوحة التحكم',
+    'nav.dashboard': 'لوحة الرحلات',
     'nav.login': 'تسجيل الدخول',
     'nav.signup': 'إنشاء حساب',
     'nav.logout': 'تسجيل الخروج',

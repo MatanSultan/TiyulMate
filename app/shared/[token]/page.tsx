@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { AlertCircle } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { useParams } from 'next/navigation'
 import { Header } from '@/components/header'
 import { TripItinerary } from '@/components/trip-itinerary'
 import { Button } from '@/components/ui/button'
@@ -39,6 +40,10 @@ export default function SharedTripPage({ params }: { params: { token: string } }
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Use useParams hook to get the token
+  const routeParams = useParams()
+  const token = routeParams.token as string
+
   const pageLocale = resolveLocale(
     trip?.language_code || (typeof trip?.itinerary?.language === 'string' ? trip.itinerary.language : undefined),
   )
@@ -49,16 +54,56 @@ export default function SharedTripPage({ params }: { params: { token: string } }
     const fetchSharedTrip = async () => {
       try {
         const supabase = createClient()
-        const { data, error: rpcError } = await supabase.rpc('get_shared_trip', {
-          share_token: params.token,
-        })
+        
+        // Try to fetch from shared_trips table first (new approach)
+        let { data: sharedTripRecord, error } = await supabase
+          .from('shared_trips')
+          .select('snapshot, language_code')
+          .eq('token', token)
+          .eq('is_active', true)
+          .single()
 
-        if (rpcError) throw rpcError
-        if (!data || !Array.isArray(data) || data.length === 0) {
+        // Fallback: if not found in shared_trips, try the old share_links approach
+        if (error || !sharedTripRecord) {
+          const { data: shareLink, error: shareLinkError } = await supabase
+            .from('share_links')
+            .select('trip_id')
+            .eq('token', token)
+            .single()
+
+          if (shareLinkError || !shareLink) {
+            throw new Error(uiText.notFound)
+          }
+
+          // Fetch the trip from share_links
+          const { data: trip, error: tripError } = await supabase
+            .from('trips')
+            .select('*')
+            .eq('id', shareLink.trip_id)
+            .single()
+
+          if (tripError || !trip) {
+            throw new Error(uiText.notFound)
+          }
+
+          setTrip(trip as TripRecord)
+          setLoading(false)
+          return
+        }
+
+        // Use the shared_trips data
+        const { snapshot, language_code } = sharedTripRecord
+        if (!snapshot || typeof snapshot !== 'object') {
           throw new Error(uiText.notFound)
         }
 
-        setTrip(data[0] as TripRecord)
+        // The snapshot is in SharedTripSnapshot format, convert to TripRecord
+        const tripData = {
+          ...snapshot,
+          language_code: language_code || snapshot?.language_code,
+        } as TripRecord
+
+        setTrip(tripData)
       } catch (err) {
         setError(err instanceof Error ? err.message : uiText.loadError)
       } finally {
@@ -66,8 +111,10 @@ export default function SharedTripPage({ params }: { params: { token: string } }
       }
     }
 
-    fetchSharedTrip()
-  }, [params.token, uiText.loadError, uiText.notFound])
+    if (token) {
+      fetchSharedTrip()
+    }
+  }, [token, uiText.loadError, uiText.notFound])
 
   if (loading) {
     return (

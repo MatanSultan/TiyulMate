@@ -1,9 +1,11 @@
-import useSWR from 'swr'
+import useSWR, { mutate as globalMutate } from 'swr'
 import { createClient } from '@/lib/supabase/client'
 import type { TripRecord } from '@/lib/trip-model'
+import { useAuth } from '@/hooks/use-auth'
 
 export type Trip = TripRecord
 
+const TRIPS_CACHE_KEY = 'trips'
 let supportsLanguageCodeColumn: boolean | null = null
 
 function hasMissingColumnError(error: unknown, column: string) {
@@ -30,7 +32,15 @@ function sortTrips(trips: Trip[]) {
   })
 }
 
-async function fetchTrips(key: string) {
+function updateTripsCache(updater: (current: Trip[] | undefined) => Trip[] | undefined, revalidate = false) {
+  return globalMutate<Trip[]>(TRIPS_CACHE_KEY, updater, {
+    revalidate,
+    populateCache: true,
+    rollbackOnError: false,
+  })
+}
+
+async function fetchTrips() {
   const supabase = createClient()
   const {
     data: { user },
@@ -40,28 +50,22 @@ async function fetchTrips(key: string) {
   if (authError) throw authError
   if (!user) return []
 
-  const query = supabase
+  const { data, error } = await supabase
     .from('trips')
     .select('*')
     .eq('user_id', user.id)
-  const { data, error } = await query
     .order('created_at', { ascending: false })
 
   if (error) throw error
   return sortTrips(data || [])
 }
 
-import { useAuth } from '@/hooks/use-auth'
-
 export function useTrips() {
   const { user } = useAuth()
-
-  // don't attempt to load trips until we know who the user is; this avoids
-  // triggering a request with no auth token and then getting an empty result
   const shouldFetch = !!user
 
   const { data, error, isLoading, mutate } = useSWR<Trip[]>(
-    shouldFetch ? 'trips' : null,
+    shouldFetch ? TRIPS_CACHE_KEY : null,
     fetchTrips,
     {
       revalidateOnFocus: false,
@@ -77,9 +81,7 @@ export function useTrips() {
   }
 }
 
-export async function createTrip(
-  trip: Omit<Trip, 'id' | 'user_id' | 'created_at'>,
-): Promise<Trip> {
+export async function createTrip(trip: Omit<Trip, 'id' | 'user_id' | 'created_at'>): Promise<Trip> {
   const supabase = createClient()
   const {
     data: { user },
@@ -87,33 +89,29 @@ export async function createTrip(
 
   if (!user) throw new Error('Not authenticated')
 
-  // use `.select().single()` to get the inserted row rather than an array
-  const tripPayload = supportsLanguageCodeColumn === false
-    ? stripUnsupportedTripFields({
-        ...trip,
-        user_id: user.id,
-      })
-    : {
-        ...trip,
-        user_id: user.id,
-      }
+  const tripPayload =
+    supportsLanguageCodeColumn === false
+      ? stripUnsupportedTripFields({
+          ...trip,
+          user_id: user.id,
+        })
+      : {
+          ...trip,
+          user_id: user.id,
+        }
 
-  let { data, error } = await supabase
-    .from('trips')
-    .insert(tripPayload)
-    .select()
-    .single()
+  let { data, error } = await supabase.from('trips').insert(tripPayload).select().single()
 
   if (error && (hasMissingColumnError(error, 'language_code') || hasMissingColumnError(error, 'updated_at'))) {
     supportsLanguageCodeColumn = false
     const retry = await supabase
       .from('trips')
-      .insert({
-        ...stripUnsupportedTripFields({
+      .insert(
+        stripUnsupportedTripFields({
           ...trip,
           user_id: user.id,
         }),
-      })
+      )
       .select()
       .single()
 
@@ -122,11 +120,14 @@ export async function createTrip(
   }
 
   if (error) throw error
+  if (!data) throw new Error('Failed to return created trip')
+
   if (supportsLanguageCodeColumn !== false) {
     supportsLanguageCodeColumn = true
   }
-  if (!data) throw new Error('Failed to return created trip')
-  return data
+
+  await updateTripsCache((current) => sortTrips([data as Trip, ...(current || [])]))
+  return data as Trip
 }
 
 export async function updateTrip(id: string, updates: Partial<Trip>) {
@@ -148,16 +149,39 @@ export async function updateTrip(id: string, updates: Partial<Trip>) {
   }
 
   if (error) throw error
+
   if (supportsLanguageCodeColumn !== false) {
     supportsLanguageCodeColumn = true
   }
+
+  await updateTripsCache((current) =>
+    sortTrips((current || []).map((trip) => (trip.id === id ? ({ ...trip, ...(data as Trip) } as Trip) : trip))),
+  )
+
   return data
 }
 
 export async function deleteTrip(id: string) {
   const supabase = createClient()
+  let previousTrips: Trip[] | undefined
+
+  await updateTripsCache((current) => {
+    previousTrips = current
+    return current?.filter((trip) => trip.id !== id) || []
+  })
+
   const { error } = await supabase.from('trips').delete().eq('id', id)
-  if (error) throw error
+
+  if (error) {
+    await globalMutate(TRIPS_CACHE_KEY, previousTrips, {
+      revalidate: false,
+      populateCache: true,
+      rollbackOnError: false,
+    })
+    throw error
+  }
+
+  return true
 }
 
 export async function duplicateTrip(trip: Trip, title?: string) {

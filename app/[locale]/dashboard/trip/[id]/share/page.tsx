@@ -13,10 +13,11 @@ import { resolveLocale, t, type Locale } from '@/lib/i18n'
 import { buildShareUrl, getClientSiteUrl } from '@/lib/site-url'
 import { siteCopy } from '@/lib/site-copy'
 import { createClient } from '@/lib/supabase/client'
+import { buildSharedTripRow } from '@/lib/shared-trip'
 import type { TripRecord } from '@/lib/trip-model'
 
 function createShareToken() {
-  return `share_${Math.random().toString(36).slice(2)}_${Date.now()}`
+  return crypto.randomUUID().replace(/-/g, '')
 }
 
 function buildUiText(locale: Locale) {
@@ -135,6 +136,35 @@ export default function ShareTripPage() {
         })
 
       if (shareError) throw shareError
+
+      // Also insert/update the shared_trips table for public access
+      try {
+        const sharedTripRow = buildSharedTripRow(trip, token, true)
+        const { error: sharedTripError } = await supabase
+          .from('shared_trips')
+          .upsert(
+            {
+              trip_id: sharedTripRow.trip_id,
+              user_id: sharedTripRow.user_id,
+              token: sharedTripRow.token,
+              title: sharedTripRow.title,
+              region: sharedTripRow.region,
+              duration_type: sharedTripRow.duration_type,
+              language_code: sharedTripRow.language_code,
+              snapshot: sharedTripRow.snapshot,
+              is_active: true,
+            },
+            { onConflict: 'trip_id' },
+          )
+
+        if (sharedTripError) {
+          console.error('Failed to sync to shared_trips:', sharedTripError)
+          // Continue anyway - share_links is the primary table
+        }
+      } catch (syncError) {
+        console.error('Error syncing to shared_trips:', syncError)
+        // Continue anyway - share_links is the primary table
+      }
 
       setShareLink(buildShareUrl(token, baseUrl))
     } catch (err) {
